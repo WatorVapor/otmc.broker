@@ -8,6 +8,7 @@
 #include <memory>
 #include <boost/asio.hpp>
 #include <async_mqtt/all.hpp>
+//import std;
 
 namespace MQTT = ::async_mqtt;
 namespace asio = boost::asio;
@@ -123,7 +124,7 @@ asio::awaitable<void> listener(std::string socket_path) {
 }
 
 int main() {
-    constexpr std::string_view socket_path = "/tmp/async_mqtt_broker.sock";
+    constexpr std::string_view socket_path = "/dev/shm/mqtt/async_mqtt_broker.sock";
     UdsStorageGuard socket_guard(socket_path);
 
     try {

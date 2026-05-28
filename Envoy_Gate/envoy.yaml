@@ -1,0 +1,34 @@
+static_resources:
+  listeners:
+  - name: mqtt_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 1884
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: mqtt_tcp
+          cluster: mqtt_backend
+
+  clusters:
+  - name: mqtt_backend
+    connect_timeout: 0.25s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: mqtt_backend
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              pipe:
+                path: /dev/shm/mqtt/async_mqtt_broker.sock   # 指向共享卷中的 socket 文件
+
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901

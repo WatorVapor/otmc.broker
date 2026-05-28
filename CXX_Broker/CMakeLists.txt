@@ -1,11 +1,16 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 4.2.0)
+
+set(CMAKE_C_COMPILER   clang   CACHE STRING "C compiler")
+set(CMAKE_CXX_COMPILER clang++ CACHE STRING "C++ compiler")
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 project(AsyncMqttUnixBroker 
     VERSION 1.0.0 
     LANGUAGES CXX
 )
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
@@ -24,6 +29,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(async_mqtt)
 
 add_executable(mqtt_uds_broker src/main.cpp)
+
+
+target_compile_options(mqtt_uds_broker PRIVATE
+    -fmodules
+    -fbuiltin-module-map
+    -fimplicit-module-maps
+)
 
 # 确保async_mqtt的头文件目录能够被正确包含
 target_include_directories(mqtt_uds_broker
