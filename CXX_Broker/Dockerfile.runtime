@@ -1,0 +1,11 @@
+FROM ubuntu:26.04
+RUN apt-get update && apt-get install -y \
+    wget \
+    libboost-dev \
+    libboost-program-options-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
+    libboost-chrono-dev
+ADD build/mqtt_uds_broker /opt/otmc/mqtt_uds_broker
+ADD CXX_Broker/entrypoint.bash /opt/otmc/entrypoint.bash
+ENTRYPOINT ["bash", "/opt/otmc/entrypoint.bash"]

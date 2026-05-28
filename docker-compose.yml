@@ -1,10 +1,8 @@
-version: "3.8"
-
 services:
   envoy:
     image: envoyproxy/envoy:v1.38.0
     volumes:
-      - ./envoy.yaml:/etc/envoy/envoy.yaml
+      - ./Envoy_Gate/envoy.yaml:/etc/envoy/envoy.yaml
       - mqtt_socket:/var/run/mqtt              # 挂载共享卷，与 broker 共用
     ports:
       - "1884:1884"   # Envoy 监听端口，客户端连接此处
@@ -16,12 +14,13 @@ services:
     command: envoy -c /etc/envoy/envoy.yaml
 
   mqtt-broker:
-    image: your-mqtt-broker:latest            # 替换为您自己的 broker 镜像
+    build:
+      context: ./
+      dockerfile: ./CXX_Broker/Dockerfile.runtime
     volumes:
       - mqtt_socket:/var/run/mqtt              # 同一共享卷，broker 在此创建 socket 文件
-    # broker 无需暴露端口，仅通过 Unix socket 与 Envoy 通信
-    # environment:
-    #   - SOCKET_PATH=/var/run/mqtt/mqtt.sock  # 假设您的 broker 通过环境变量指定路径
+    environment:
+      - SOCKET_PATH=/var/run/mqtt/broker.external.sock  # 假设您的 broker 通过环境变量指定路径
 
 volumes:
   mqtt_socket:   # 定义共享卷，用于传递 Unix socket 文件
