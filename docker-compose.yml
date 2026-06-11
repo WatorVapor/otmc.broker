@@ -13,6 +13,15 @@ services:
     # user: "0:0"
     command: envoy -c /etc/envoy/envoy.yaml
 
+  valkey:
+    image: valkey/valkey:9.1
+    volumes:
+      - ./valkey/valkey.conf:/etc/valkey/valkey.conf
+      - ./valkey_data:/data
+    ports:
+      - "6379:6379"   # valkey 监听端口，客户端连接此处
+    command: valkey -c /etc/valkey/valkey.conf
+
   mqtt-broker:
     build:
       context: ./
@@ -24,3 +33,4 @@ services:
 
 volumes:
   mqtt_socket:   # 定义共享卷，用于传递 Unix socket 文件
+  valkey_data:

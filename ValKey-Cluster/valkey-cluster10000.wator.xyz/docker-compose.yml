@@ -1,0 +1,12 @@
+services:
+  valkey:
+    image: valkey/valkey:9
+    container_name: valkey-dts
+    network_mode: host
+    volumes:
+      - ./valkey.conf:/etc/valkey/valkey.conf
+      - /opt/otmc-deploy/broker/valkey/data:/data
+      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/etc/valkey/tls
+    command: >
+      valkey-server /etc/valkey/valkey.conf
+    
