@@ -1,17 +1,17 @@
 services:
-  envoy:
-    image: envoyproxy/envoy:v1.38.0
+  openresty:
+    image: openresty/openresty:alpine
     volumes:
-      - ./Envoy_Gate/envoy.yaml:/etc/envoy/envoy.yaml
+      - ./Nginx_Gate/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./Nginx_Gate/proxy.lua:/usr/local/openresty/nginx/conf/proxy.lua:ro
+      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/openresty/nginx/conf/server_cert:ro
+      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/openresty/nginx/conf/client_cert:ro
       - mqtt_socket:/var/run/mqtt              # 挂载共享卷，与 broker 共用
     ports:
       - "1884:1884"   # Envoy 监听端口，客户端连接此处
       - "9901:9901"   # 管理端口（可选）
     depends_on:
       - mqtt-broker
-    # 如果 Envoy 容器内无法连接 socket（如权限不足），可临时用 root 运行
-    # user: "0:0"
-    command: envoy -c /etc/envoy/envoy.yaml
 
   valkey:
     image: valkey/valkey:9.1
