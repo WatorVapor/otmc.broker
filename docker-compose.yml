@@ -1,15 +1,16 @@
 services:
-  openresty:
+  nginx-openresty:
     image: openresty/openresty:alpine
     volumes:
       - ./Nginx_Gate/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
       - ./Nginx_Gate/proxy.lua:/usr/local/openresty/nginx/conf/proxy.lua:ro
       - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/openresty/nginx/conf/server_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/openresty/nginx/conf/client_cert:ro
-      - mqtt_socket:/var/run/mqtt              # 挂载共享卷，与 broker 共用
+      # 挂载共享卷，与 broker 共用
+      - mqtt_socket:/var/run/mqtt
     ports:
-      - "1884:1884"   # Envoy 监听端口，客户端连接此处
-      - "9901:9901"   # 管理端口（可选）
+      # nginx 监听端口，客户端连接此处
+      - "8443:8443"
     depends_on:
       - mqtt-broker
 
@@ -19,7 +20,8 @@ services:
       - ./valkey/valkey.conf:/etc/valkey/valkey.conf
       - ./valkey_data:/data
     ports:
-      - "6379:6379"   # valkey 监听端口，客户端连接此处
+      # valkey 监听端口，客户端连接此处
+      - "6379:6379"
     command: valkey -c /etc/valkey/valkey.conf
 
   mqtt-broker:
@@ -27,10 +29,12 @@ services:
       context: ./
       dockerfile: ./CXX_Broker/Dockerfile.runtime
     volumes:
-      - mqtt_socket:/var/run/mqtt              # 同一共享卷，broker 在此创建 socket 文件
+      # 同一共享卷，broker 在此创建 socket 文件
+      - mqtt_socket:/var/run/mqtt              
     environment:
-      - SOCKET_PATH=/var/run/mqtt/broker.external.sock  # 假设您的 broker 通过环境变量指定路径
-
+      # 假设您的 broker 通过环境变量指定路径
+      - SOCKET_PATH=/var/run/mqtt/broker.external.sock  
 volumes:
-  mqtt_socket:   # 定义共享卷，用于传递 Unix socket 文件
+  # 定义共享卷，用于传递 Unix socket 文件
+  mqtt_socket:   
   valkey_data:
