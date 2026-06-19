@@ -22,7 +22,6 @@ function connectWithMTLS() {
     ca: ca,
     cert: cert,
     key: key,
-
     // 临时绕过主机名检查（仅测试！）
     checkServerIdentity: (host, cert) => {
       // 可以在这里加自定义校验，返回 undefined 表示接受
