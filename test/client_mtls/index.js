@@ -18,7 +18,8 @@ function connectWithMTLS() {
     clean: true,
 
     // TLS 配置
-    rejectUnauthorized: true,    // 仍然验证证书是否由受信任 CA 签发
+    rejectUnauthorized: false, // 确保服务器证书有效
+
     ca: ca,
     cert: cert,
     key: key,
