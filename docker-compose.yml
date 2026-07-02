@@ -17,7 +17,8 @@ services:
 #      - mqtt-broker
 
   haproxy:
-    image: haproxy:lts-alpine
+    #image: haproxy:lts-alpine
+    build: ./HAProxy_Gate
     volumes:
       - ./HAProxy_Gate/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ./HAProxy_Gate/lua:/usr/local/etc/haproxy/lua:ro
