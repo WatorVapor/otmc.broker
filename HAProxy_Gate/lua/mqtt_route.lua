@@ -31,6 +31,7 @@ local function dump_module(mod, name, depth)
     end
 end
 
+-- Dump the methods of a certificate object
 local function dump_cert_methods(cert)
     if not cert then
         core.Info("cert is nil")
@@ -55,7 +56,7 @@ local function dump_cert_methods(cert)
     end
 end
 
-
+-- Dump the methods of a public key object
 local function dump_public_key_methods(pubkey)
     if not pubkey then
         core.Info("pubkey is nil")
@@ -81,7 +82,7 @@ local function dump_public_key_methods(pubkey)
 end
 
 
-
+--- Parse ASN.1 length from DER data
 local function parse_asn1_length(data, offset)
     local b = string.byte(data, offset)
     if not b then return nil, 0 end
@@ -168,8 +169,26 @@ local function bin2b64(s)
 end
 
 
--- 从证书链提取 tenant_hash 和 device_id
-local function extract_identity(txn)        
+
+local function urandom_bytes(n)
+    local f = io.open("/dev/urandom", "rb")
+    if not f then
+        error("无法打开 /dev/urandom，可能权限不足或被容器限制")
+    end
+    local s = f:read(n)
+    f:close()
+    if #s ~= n then
+        error("读取 /dev/urandom 时未获得足够数据")
+    end
+    return s
+end
+
+uuid.set_rng(urandom_bytes)
+
+
+
+-- 从证书链提取 public key hash 和 publick key
+local function extract_certs_chain(txn)        
     -- 获取客户端证书链 DER
     local chain_blob = txn.sf:ssl_c_chain_der()
     if not chain_blob or #chain_blob == 0 then
@@ -186,7 +205,8 @@ local function extract_identity(txn)
 
     -- 解析证书链
     local certs = {}
-    local cert_hashes = ""
+    local cert_pubkeys = {}
+    local cert_hash_list = {}
     for _, cert_der in ipairs(cert_ders) do
         local cert, err = x509.new(cert_der,"der")
         if not cert then
@@ -207,7 +227,7 @@ local function extract_identity(txn)
         -- 解析 public key
         local public_key = cert:getPublicKey()
         txn:Info("certificate public key type: " .. (public_key and public_key:type() or "nil"))
-        dump_public_key_methods(public_key)
+        -- dump_public_key_methods(public_key)
         txn:Info("certificate public key: " .. (public_key and tostring(public_key) or "nil"))
         local dig = digest.new("sha256")
         dig:update(tostring(public_key))
@@ -215,31 +235,19 @@ local function extract_identity(txn)
         txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2hex(pubkey_hash) or "nil"))
         
         table.insert(certs, cert)
-        cert_hashes = cert_hashes .."@".. bin2hex(pubkey_hash)
-
+        cert_pubkeys[bin2hex(pubkey_hash)] = public_key
+        table.insert(cert_hash_list, bin2hex(pubkey_hash))
     end
-    txn:Info("Parsed " .. #certs .. " certificates in chain")    
-    txn:Info("Parsed " .. cert_hashes .. " certificate hashes")    
-    local dig2 = digest.new("sha256")
-    dig2:update(cert_hashes)
-    local total_hash = dig2:final()
-    txn:Info("Total certificate chain hash: " .. (total_hash and bin2hex(total_hash) or "nil"))
-
-    return certs
+    txn:Info("Extracted " .. #certs .. " certificates in chain")    
+    txn:Info("Extracted " .. #cert_hash_list .. " certificate hashes")
+    local total_hashes = table.concat(cert_hash_list, "@")
+    txn:Info("Certificate public key hashes: " .. total_hashes)
+    for keyHash, certPubKey in pairs(cert_pubkeys) do
+        txn:Info("Certificate public key: " .. keyHash.. " -> " .. tostring(certPubKey))
+    end
+    return cert_pubkeys, total_hashes
 end
 
-
-
--- 获取完整客户端证书链的 PEM 格式
-local function get_client_chain_pem(txn)
-    -- ssl_c_chain_pem() 返回 PEM 编码的整个证书链
-    local pem = txn.sf:ssl_c_chain_pem()
-    txn:Info("Client chain PEM length: " .. (pem and #pem or 0))
-    if not pem or #pem == 0 then
-        return nil
-    end
-    return pem
-end
 
 -- Redis 命令：SET token pem EX 30
 local function redis_set(key, value, ttl)
@@ -263,44 +271,32 @@ end
 -- 主入口
 function process_mqtt_connect(txn)
     txn:Info("Processing MQTT CONNECT for " .. txn.sf:src())
-    dump_module(openssl, "openssl")
-    dump_module(x509, "x509")
-    dump_module(digest, "digest")
-    local tenant_hash, device_id = extract_identity(txn)
-    if not tenant_hash or not device_id then
+    -- dump_module(openssl, "openssl")
+    -- dump_module(x509, "x509")
+    -- dump_module(digest, "digest")
+    local pubkeys_hash, total_hashes = extract_certs_chain(txn)
+    if not pubkeys_hash or not total_hashes then
         txn:Warning("Failed to extract identity")
         txn:set_var(txn.f:var("txn.reject"), true)
         return
     end
 
---[[
 
-    -- 查询后端地址 (基于 tenant_hash)
-    local backend_addr = redis_get(tenant_hash)  -- 实现略
-    if not backend_addr then
-        txn:Warning("No backend for tenant_hash " .. tenant_hash)
-        txn:set_var(txn.f:var("txn.reject"), true)
-        return
-    end
-
-    -- 生成 client_id
-    local client_id = tenant_hash .. "-" .. device_id
-]]
-
-    -- 获取客户端证书链 PEM
-    local chain_pem = get_client_chain_pem(txn)
-    if not chain_pem then
-        txn:Warning("Failed to get client chain PEM")
-        txn:set_var(txn.f:var("txn.reject"), true)
-        return
-    end
 
     -- 生成随机 token
     local token = uuid()  -- 例如 "550e8400-e29b-41d4-a716-446655440000"
-    -- 将证书链存储到 Redis，30 秒过期
-    local ok, err = redis_set(token, chain_pem, 30)
+    -- 将证书链公钥存储到 Redis，300 秒过期
+    local storeKey = total_hashes .. ":" .. token
+    local storeValue = ""
+    for keyHash, certPubKey in pairs(pubkeys_hash) do
+        txn:Info("Certificate public key: " .. keyHash.. " -> " .. tostring(certPubKey))
+        storeValue = storeValue .. tostring(certPubKey) .. "\n"
+    end
+
+
+    local ok, err = redis_set(storeKey, storeValue, 300)
     if not ok then
-        txn:Warning("Failed to store cert chain in Redis: " .. (err or "unknown"))
+        txn:Warning("Failed to store cert chain public keys in Redis: " .. (err or "unknown"))
         txn:set_var(txn.f:var("txn.reject"), true)
         return
     end
