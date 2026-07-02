@@ -212,10 +212,10 @@ local function extract_identity(txn)
         local dig = digest.new("sha256")
         dig:update(tostring(public_key))
         local pubkey_hash = dig:final()
-        txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2b64(pubkey_hash) or "nil"))
+        txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2hex(pubkey_hash) or "nil"))
         
         table.insert(certs, cert)
-        cert_hashes = cert_hashes .."@".. bin2b64(pubkey_hash)
+        cert_hashes = cert_hashes .."@".. bin2hex(pubkey_hash)
 
     end
     txn:Info("Parsed " .. #certs .. " certificates in chain")    
@@ -223,7 +223,7 @@ local function extract_identity(txn)
     local dig2 = digest.new("sha256")
     dig2:update(cert_hashes)
     local total_hash = dig2:final()
-    txn:Info("Total certificate chain hash: " .. (total_hash and bin2b64(total_hash) or "nil"))
+    txn:Info("Total certificate chain hash: " .. (total_hash and bin2hex(total_hash) or "nil"))
 
     return certs
 end
