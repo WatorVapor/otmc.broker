@@ -2,6 +2,7 @@ local openssl = require "openssl"
 local x509 = require("openssl.x509")
 local digest  = require "openssl.digest"
 local uuid    = require "uuid"    -- 或自己实现随机 token 生成
+local base58 = require("base58")
 
 -- Redis 配置 (mTLS)
 local REDIS_HOST = "redis.trusted.svc"
