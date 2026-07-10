@@ -5,13 +5,8 @@ local uuid    = require "uuid"    -- 或自己实现随机 token 生成
 local base58 = require("base58")
 
 -- Redis 配置 (mTLS)
-local REDIS_HOST = "redis.trusted.svc"
-local REDIS_PORT = 6380
-local REDIS_SSL = {
-    verify = "required",
-    cafile = "/etc/ssl/redis_ca.crt",
-    cert   = "/etc/ssl/redis_haproxy.pem",
-}
+local REDIS_HOST = "127.0.0.1"
+local REDIS_PORT = 16379
 
 
 -- Recursively print table keys with type info (depth 2)
@@ -135,6 +130,11 @@ local function bin2hex(s)
     end))
 end
 
+local function bin2b58(s)
+    return base58.encode(s)
+end
+
+
 local function bin2b64(s)
     -- Convert binary string to base64
     local b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
@@ -233,11 +233,11 @@ local function extract_certs_chain(txn)
         local dig = digest.new("sha256")
         dig:update(tostring(public_key))
         local pubkey_hash = dig:final()
-        txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2hex(pubkey_hash) or "nil"))
+        txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2b58(pubkey_hash) or "nil"))
         
         table.insert(certs, cert)
-        cert_pubkeys[bin2hex(pubkey_hash)] = public_key
-        table.insert(cert_hash_list, bin2hex(pubkey_hash))
+        cert_pubkeys[bin2b58(pubkey_hash)] = public_key
+        table.insert(cert_hash_list, bin2b58(pubkey_hash))
     end
     txn:Info("Extracted " .. #certs .. " certificates in chain")    
     txn:Info("Extracted " .. #cert_hash_list .. " certificate hashes")
@@ -252,15 +252,19 @@ end
 
 -- Redis 命令：SET token pem EX 30
 local function redis_set(key, value, ttl)
+    core.Info("Redis connection details: " .. REDIS_HOST .. ":" .. tostring(REDIS_PORT))
     local conn = core.tcp()
-    conn:settimeout(1)
-    local ok, err = conn:connect(REDIS_HOST, REDIS_PORT, REDIS_SSL)
+    conn:settimeout(5000)  -- 5 秒超时  
+    local ok, err = conn:connect(REDIS_HOST, REDIS_PORT)
+    core.Info("Redis connection result: " .. tostring(ok) .. ", error: " .. tostring(err))
     if not ok then return false, err end
     local cmd = string.format("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
                               #key, key, #value, value)
+    core.Info("Sending Redis command: " .. cmd:gsub("\r\n", "\\r\\n"))
     conn:send(cmd)
     -- 接收响应 (简单处理)
     local data, err = conn:receive("*l")
+    core.Info("Received Redis response: " .. tostring(data) .. ", error: " .. tostring(err))
     conn:close()
     if data and data:match("^+OK") then
         return true
@@ -296,6 +300,7 @@ function process_mqtt_connect(txn)
 
 
     local ok, err = redis_set(storeKey, storeValue, 300)
+    txn:Info("Redis SET result: " .. tostring(ok) .. ", error: " .. tostring(err))
     if not ok then
         txn:Warning("Failed to store cert chain public keys in Redis: " .. (err or "unknown"))
         txn:set_var(txn.f:var("txn.reject"), true)

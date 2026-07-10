@@ -22,8 +22,9 @@ services:
     volumes:
       - ./HAProxy_Gate/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ./HAProxy_Gate/lua:/usr/local/etc/haproxy/lua:ro
-      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/haproxy/certs/server_cert:ro
-      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/haproxy/certs/client_cert:ro
+      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro
+      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
+      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
       # 挂载共享卷，与 broker 共用
       - mqtt_socket:/var/run/mqtt
     network_mode : "host"
