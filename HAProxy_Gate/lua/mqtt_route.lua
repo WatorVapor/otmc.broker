@@ -8,6 +8,8 @@ local base58 = require("base58")
 local REDIS_HOST = "127.0.0.1"
 local REDIS_PORT = 16379
 
+local ALL_BACKENDS_ADDR_KEY = "otmc:all_backends_addr"  -- Redis key for all backend addresses
+
 
 -- Recursively print table keys with type info (depth 2)
 local function dump_module(mod, name, depth)
@@ -124,50 +126,11 @@ local function split_der_certificates(der_blob)
     return certs
 end
 
-local function bin2hex(s)
-    return (s:gsub('.', function(c)
-        return string.format('%02x', string.byte(c))
-    end))
-end
 
 local function bin2b58(s)
     return base58.encode(s)
 end
 
-
-local function bin2b64(s)
-    -- Convert binary string to base64
-    local b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-    local result = {}
-    local padding = ''
-    
-    for i = 1, #s, 3 do
-        local b1, b2, b3 = string.byte(s, i, i + 2)
-        b2 = b2 or 0
-        b3 = b3 or 0
-        
-        local n = b1 * 65536 + b2 * 256 + b3
-        local c1 = math.floor(n / 262144) % 64 + 1
-        local c2 = math.floor(n / 4096) % 64 + 1
-        local c3 = math.floor(n / 64) % 64 + 1
-        local c4 = n % 64 + 1
-        
-        table.insert(result, b64_chars:sub(c1, c1))
-        table.insert(result, b64_chars:sub(c2, c2))
-        table.insert(result, b64_chars:sub(c3, c3))
-        table.insert(result, b64_chars:sub(c4, c4))
-    end
-    
-    local remainder = #s % 3
-    if remainder == 1 then
-        result[#result] = padding
-        result[#result - 1] = padding
-    elseif remainder == 2 then
-        result[#result] = padding
-    end
-    
-    return table.concat(result)
-end
 
 
 
@@ -241,7 +204,7 @@ local function extract_certs_chain(txn)
     end
     txn:Info("Extracted " .. #certs .. " certificates in chain")    
     txn:Info("Extracted " .. #cert_hash_list .. " certificate hashes")
-    local total_hashes = table.concat(cert_hash_list, "@")
+    local total_hashes = table.concat(cert_hash_list, "_")
     txn:Info("Certificate public key hashes: " .. total_hashes)
     for keyHash, certPubKey in pairs(cert_pubkeys) do
         txn:Info("Certificate public key: " .. keyHash.. " -> " .. tostring(certPubKey))
@@ -250,28 +213,115 @@ local function extract_certs_chain(txn)
 end
 
 
--- Redis 命令：SET token pem EX 30
+local cluster_map = { 
+    ['valkey-cluster-conoha-pdf-coltd.wator.xyz:6379']   = '127.0.0.1:16379',
+    ['valkey-cluster-conoha-wator.wator.xyz:6379']       = '127.0.0.1:16380',
+    ['valkey-cluster-conoha-ndhealth.wator.xyz:6379']    = '127.0.0.1:16381',
+}
+
+local function send_raw_set(host, port, key, value, ttl)
+    local conn = core.tcp()
+    conn:settimeout(5000)
+
+    local target_key = host .. ":" .. tostring(port)
+    local real_target = cluster_map[target_key]
+    
+    local real_host = host
+    local real_port = port
+
+    -- 2. 正确拆分映射出的 IP 和 端口
+    if real_target then
+        local mapped_ip, mapped_port = real_target:match("^(.-):(%d+)$")
+        if mapped_ip and mapped_port then
+            real_host = mapped_ip
+            real_port = tonumber(mapped_port)
+        end
+    end
+
+    -- 假设日志对象为 core.Info 或 txn:Info（注意：如果是独立函数，HAProxy Lua 中通常用 core.Info）
+    core.Info(string.format("Connecting to Redis target %s via local mapping %s:%d", target_key, real_host, real_port))
+
+    local ok, err = conn:connect(real_host, real_port)
+    if not ok then return nil, err end
+
+    local ttl_str = tostring(ttl)
+    -- RESP 格式 (SET key value EX ttl)
+    local cmd = string.format("*5\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n$2\r\nEX\r\n$%d\r\n%s\r\n",
+                              #key, key, #value, value, #ttl_str, ttl_str)
+    
+    conn:send(cmd)
+    local data, err = conn:receive("*l")
+    conn:close()
+    return data, err
+end
+
+
 local function redis_set(key, value, ttl)
     core.Info("Redis connection details: " .. REDIS_HOST .. ":" .. tostring(REDIS_PORT))
-    local conn = core.tcp()
-    conn:settimeout(5000)  -- 5 秒超时  
-    local ok, err = conn:connect(REDIS_HOST, REDIS_PORT)
-    core.Info("Redis connection result: " .. tostring(ok) .. ", error: " .. tostring(err))
-    if not ok then return false, err end
-    local cmd = string.format("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
-                              #key, key, #value, value)
-    core.Info("Sending Redis command: " .. cmd:gsub("\r\n", "\\r\\n"))
-    conn:send(cmd)
-    -- 接收响应 (简单处理)
-    local data, err = conn:receive("*l")
+    
+    local data, err = send_raw_set(REDIS_HOST, REDIS_PORT, key, value, ttl)
     core.Info("Received Redis response: " .. tostring(data) .. ", error: " .. tostring(err))
-    conn:close()
+
+    -- 处理 -MOVED 重定向
+    if data and data:sub(1, 7) == "-MOVED " then
+        local new_host, new_port = data:match("%-MOVED%s+%d+%s+(.-):(%d+)")
+        if new_host and new_port then
+            core.Info(string.format("Following Redis MOVED to %s:%s", new_host, new_port))
+            data, err = send_raw_set(new_host, tonumber(new_port), key, value, ttl)
+            core.Info("Received Redis response after redirect: " .. tostring(data))
+        end
+    end
+
     if data and data:match("^+OK") then
         return true
     else
         return false, data or err
     end
 end
+
+local function send_raw_get(host, port, key)
+    local conn = core.tcp()
+    conn:settimeout(5000)
+
+    local target_key = host .. ":" .. tostring(port)
+    local real_target = cluster_map[target_key]
+    
+    local real_host = host
+    local real_port = port
+
+    -- 2. 正确拆分映射出的 IP 和 端口
+    if real_target then
+        local mapped_ip, mapped_port = real_target:match("^(.-):(%d+)$")
+        if mapped_ip and mapped_port then
+            real_host = mapped_ip
+            real_port = tonumber(mapped_port)
+        end
+    end
+
+    -- 假设日志对象为 core.Info 或 txn:Info（注意：如果是独立函数，HAProxy Lua 中通常用 core.Info）
+    core.Info(string.format("Connecting to Redis target %s via local mapping %s:%d", target_key, real_host, real_port))
+
+    local ok, err = conn:connect(real_host, real_port)
+    if not ok then return nil, err end
+
+    -- RESP 格式 (GET key)
+    local cmd = string.format("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n",
+                              #key, key)
+    
+    conn:send(cmd)
+    local data, err = conn:receive("*l")
+    conn:close()
+    return data, err
+
+end
+
+local function redis_get(key)
+    local result,err = send_raw_get(REDIS_HOST, REDIS_PORT, ALL_BACKENDS_ADDR_KEY)
+    core.Info("Received Redis GET response: " .. tostring(result) .. ", error: " .. tostring(err))
+    return result, err
+end
+
+
 
 -- 主入口
 function process_mqtt_connect(txn)
@@ -291,7 +341,7 @@ function process_mqtt_connect(txn)
     -- 生成随机 token
     local token = uuid()  -- 例如 "550e8400-e29b-41d4-a716-446655440000"
     -- 将证书链公钥存储到 Redis，300 秒过期
-    local storeKey = total_hashes .. ":" .. token
+    local storeKey = total_hashes .. "_" .. token
     local storeValue = ""
     for keyHash, certPubKey in pairs(pubkeys_hash) do
         txn:Info("Certificate public key: " .. keyHash.. " -> " .. tostring(certPubKey))
@@ -306,6 +356,7 @@ function process_mqtt_connect(txn)
         txn:set_var(txn.f:var("txn.reject"), true)
         return
     end
+    redis_get(storeKey)  -- 测试读取，确保存储成功
 
     -- 通过 Proxy Protocol v2 自定义 TLV 传递 token 和 client_id (可选)
     -- 假设 HAProxy 配置允许设置 TLV 变量

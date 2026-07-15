@@ -33,21 +33,21 @@ docker run -it --rm \
   valkey/valkey:9 /bin/bash
 ```
 ```bash
-valkey-cli --tls \
+valkey-cli -c --tls \
   --cert /etc/valkey/tls/valkey-client.crt \
   --key /etc/valkey/tls/valkey-client.key \
   --cacert /etc/valkey/tls/valkey-root.crt \
   -p 6379 \
   -h valkey-cluster-conoha-wator.wator.xyz
 
-valkey-cli --tls \
+valkey-cli -c --tls \
   --cert /etc/valkey/tls/valkey-client.crt \
   --key /etc/valkey/tls/valkey-client.key \
   --cacert /etc/valkey/tls/valkey-root.crt \
   -p 6379 \
   -h valkey-cluster-conoha-ndhealth.wator.xyz
 
-valkey-cli --tls \
+valkey-cli -c --tls \
   --cert /etc/valkey/tls/valkey-client.crt \
   --key /etc/valkey/tls/valkey-client.key \
   --cacert /etc/valkey/tls/valkey-root.crt \

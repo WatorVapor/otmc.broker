@@ -1,21 +1,4 @@
 services:
-#  nginx-openresty:
-#    image: openresty/openresty:alpine
-#    volumes:
-#      - ./Nginx_Gate/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
-#      - ./Nginx_Gate/proxy.lua:/usr/local/openresty/nginx/conf/proxy.lua:ro
-#      - ./Nginx_Gate/ssl_certificate.lua:/usr/local/openresty/nginx/conf/ssl_certificate.lua:ro
-#      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/openresty/nginx/conf/server_cert:ro
-#      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/openresty/nginx/conf/client_cert:ro
-#      # 挂载共享卷，与 broker 共用
-#      - mqtt_socket:/var/run/mqtt
-#    network_mode : "host"
-#    #ports:
-#      # nginx 监听端口，客户端连接此处
-#      #- "8443:8443"
-#    depends_on:
-#      - mqtt-broker
-
   haproxy:
     #image: haproxy:lts-alpine
     build: ./HAProxy_Gate
