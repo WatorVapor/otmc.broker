@@ -285,11 +285,9 @@ local function send_raw_get(host, port, key)
 
     local target_key = host .. ":" .. tostring(port)
     local real_target = cluster_map[target_key]
-    
     local real_host = host
     local real_port = port
 
-    -- 2. 正确拆分映射出的 IP 和 端口
     if real_target then
         local mapped_ip, mapped_port = real_target:match("^(.-):(%d+)$")
         if mapped_ip and mapped_port then
@@ -298,25 +296,73 @@ local function send_raw_get(host, port, key)
         end
     end
 
-    -- 假设日志对象为 core.Info 或 txn:Info（注意：如果是独立函数，HAProxy Lua 中通常用 core.Info）
     core.Info(string.format("Connecting to Redis target %s via local mapping %s:%d", target_key, real_host, real_port))
 
     local ok, err = conn:connect(real_host, real_port)
-    if not ok then return nil, err end
+    if not ok then
+        conn:close()
+        return nil, err
+    end
 
-    -- RESP 格式 (GET key)
-    local cmd = string.format("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n",
-                              #key, key)
-    
+    local cmd = string.format("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", #key, key)
     conn:send(cmd)
-    local data, err = conn:receive("*l")
-    conn:close()
-    return data, err
 
+    -- 读取 RESP 第一行
+    local line = conn:receive("*l")
+    if not line then
+        conn:close()
+        return nil, "empty response"
+    end
+
+    -- 处理 MOVED 重定向
+    if line:sub(1, 7) == "-MOVED " then
+        conn:close()
+        local new_host, new_port = line:match("%-MOVED%s+%d+%s+(.-):(%d+)")
+        if new_host and new_port then
+            core.Info(string.format("Following Redis MOVED to %s:%s", new_host, new_port))
+            return send_raw_get(new_host, tonumber(new_port), key)
+        else
+            return nil, line
+        end
+    end
+
+    -- 处理其他错误响应（以 '-' 开头）
+    if line:sub(1,1) == "-" then
+        conn:close()
+        return nil, line
+    end
+
+    -- 处理简单字符串（+OK 等）
+    if line:sub(1,1) == "+" then
+        conn:close()
+        return line:sub(2), nil
+    end
+
+    -- 处理整数（:123）
+    if line:sub(1,1) == ":" then
+        conn:close()
+        return line:sub(2), nil
+    end
+
+    -- 处理 bulk string（$len）
+    if line:sub(1,1) == "$" then
+        local len = tonumber(line:sub(2))
+        if not len or len < 0 then
+            conn:close()
+            return nil, "key not found"
+        end
+        local data = conn:receive(len)
+        conn:receive(2)  -- 读取结尾的 \r\n
+        conn:close()
+        return data, nil
+    end
+
+    conn:close()
+    return nil, "unknown response: " .. tostring(line)
 end
 
 local function redis_get(key)
-    local result,err = send_raw_get(REDIS_HOST, REDIS_PORT, ALL_BACKENDS_ADDR_KEY)
+    local result,err = send_raw_get(REDIS_HOST, REDIS_PORT, key)
     core.Info("Received Redis GET response: " .. tostring(result) .. ", error: " .. tostring(err))
     return result, err
 end
@@ -356,13 +402,24 @@ function process_mqtt_connect(txn)
         txn:set_var(txn.f:var("txn.reject"), true)
         return
     end
-    redis_get(storeKey)  -- 测试读取，确保存储成功
+    local result, err = redis_get(storeKey)  -- 测试读取，确保存储成功
+    txn:Info("Redis GET storeKey<" .. tostring(storeKey) .. ">, result: <" .. tostring(result) .. ">, error: " .. tostring(err))
 
     -- 通过 Proxy Protocol v2 自定义 TLV 传递 token 和 client_id (可选)
     -- 假设 HAProxy 配置允许设置 TLV 变量
-    txn:set_var(txn.f:var("txn.pp2_tlv_0xE0"), token)          -- TLV type 0xE0
+    local token_tlv_var = txn.f:var("txn.pp2_tlv_0xE0")
+    if token_tlv_var then
+        txn:set_var(token_tlv_var, token)                       -- TLV type 0xE0
+    else
+        txn:Warning("HAProxy variable txn.pp2_tlv_0xE0 is not defined")
+    end
     -- 也可以把 client_id 放入另一个 TLV，方便 broker 快速校验
-    txn:set_var(txn.f:var("txn.pp2_tlv_0xE1"), client_id)     -- TLV type 0xE1
+    local client_id_tlv_var = txn.f:var("txn.pp2_tlv_0xE1")
+    if client_id_tlv_var then
+        txn:set_var(client_id_tlv_var, client_id)              -- TLV type 0xE1
+    else
+        txn:Warning("HAProxy variable txn.pp2_tlv_0xE1 is not defined")
+    end
 
     -- 设置目标地址
     local ip, port = backend_addr:match("^(.+):(%d+)$")

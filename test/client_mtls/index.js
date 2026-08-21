@@ -32,7 +32,7 @@ function connectWithMTLS() {
     },
   };
 
-  const client = mqtt.connect('mqtts://mqtt-cluster10000.wator.xyz:8443', options);
+  const client = mqtt.connect('mqtts://mqtt-broker-local10001.wator.xyz:8443', options);
 
   client.on('connect', () => {
     console.log('✅ 已连接（TLS 客户端证书认证）');
