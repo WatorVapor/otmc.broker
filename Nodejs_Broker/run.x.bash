@@ -3,6 +3,7 @@ docker run -it \
     -v $(pwd):/app \
     -v /etc/group:/etc/group:ro \
     -v /etc/passwd:/etc/passwd:ro \
+    -v //dev/shm/mqtt/:/tmp/mqtt/ \
     -v ${HOME}:${HOME} \
     --network host \
     -w /app \

@@ -2,7 +2,7 @@ import net from 'net';
 import fs from 'fs';
 import mqttPacket from 'mqtt-packet';
 import { ClientSession } from './client_session.mjs';
-const SOCKET_PATH = '/tmp/mqtt.sock';
+const SOCKET_PATH = '/tmp/mqtt/mqtt.sock';
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
 }
@@ -12,14 +12,14 @@ const server = net.createServer((socket) => {
   parser.on('packet', (packet) => {
     clientSession.handlePacket(socket, packet);
   });
-  
+
   socket.on('data', (chunk) => {
     parser.parse(chunk);
   });
 
   socket.on('close', () => {
     if (socket.clientId) {
-      clients.delete(socket.clientId);
+      clientSession.delete(socket.clientId)
       console.log(`[Disconnect] 客户端已断开: ${socket.clientId}`);
     }
   });

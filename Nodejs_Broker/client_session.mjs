@@ -1,23 +1,24 @@
+import mqttPacket from 'mqtt-packet';
 const gClients = new Map();
 
 class ClientSession {
   constructor(socket) {
     this.socket = socket;
-    this.subscriptions = new Set();
+    this.internal = new ClientSessionInternal();
   }
   handlePacket(socket, packet) {
     switch (packet.cmd) {
       case 'connect':
-        this.handleConnect(socket, packet);
+        this.internal.handleConnect(socket, packet, this);
         break;
       case 'publish':
-        this.handlePublish(socket, packet);
+        this.internal.handlePublish(socket, packet);
         break;
       case 'subscribe':
-        this.handleSubscribe(socket, packet);
+        this.internal.handleSubscribe(socket, packet);
         break;
       case 'pingreq':
-        this.handlePingreq(socket);
+        this.internal.handlePingreq(socket);
         break;
       case 'disconnect':
         socket.end();
@@ -26,12 +27,21 @@ class ClientSession {
         console.log('未处理的包类型:', packet.cmd);
     }
   }
+  delete(clientId) {
+    gClients.delete(clientId);
+  }
+}
+export { ClientSession };
 
-  handleConnect(socket, packet) {
+class ClientSessionInternal {
+  constructor() {
+    this.subscriptions = new Set();
+  }
+  handleConnect(socket, packet,client) {
     const clientId = packet.clientId || `client_${Math.random().toString(16).substring(2, 10)}`;
     socket.clientId = clientId;
 
-    gClients.set(clientId, this);
+    gClients.set(clientId, client);
 
     console.log(`[Connect] 客户端已连接: ${clientId}`);
 
@@ -65,7 +75,7 @@ class ClientSession {
     console.log(`[Publish] 来自 ${socket.clientId} -> 主题 [${topic}]: ${payload.toString()}`);
 
     gClients.forEach((client, clientId) => {
-      if (client.hasSubscription(topic)) {
+      if (client.internal.hasSubscription(topic)) {
         const pubPacket = mqttPacket.generate({
           cmd: 'publish',
           topic,
@@ -99,6 +109,3 @@ class ClientSession {
     return this.subscriptions.has(topic);
   }
 }
-
-export { ClientSession };
-
