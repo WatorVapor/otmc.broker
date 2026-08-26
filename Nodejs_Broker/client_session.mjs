@@ -5,6 +5,12 @@ class ClientSession {
   constructor(socket) {
     this.socket = socket;
     this.internal = new ClientSessionInternal();
+    this.parser = mqttPacket.parser();
+
+    this.parser.on('packet', (packet) => {
+      this.handlePacket(socket, packet);
+    });
+
   }
   handlePacket(socket, packet) {
     switch (packet.cmd) {
@@ -26,6 +32,9 @@ class ClientSession {
       default:
         console.log('未处理的包类型:', packet.cmd);
     }
+  }
+  parse(chunk) {
+    this.parser.parse(chunk);
   }
   delete(clientId) {
     gClients.delete(clientId);

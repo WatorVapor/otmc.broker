@@ -1,20 +1,14 @@
 import net from 'net';
 import fs from 'fs';
-import mqttPacket from 'mqtt-packet';
 import { ClientSession } from './client_session.mjs';
 const SOCKET_PATH = '/tmp/mqtt/mqtt.sock';
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
 }
 const server = net.createServer((socket) => {
-  const parser = mqttPacket.parser();
   const clientSession = new ClientSession(socket);
-  parser.on('packet', (packet) => {
-    clientSession.handlePacket(socket, packet);
-  });
-
   socket.on('data', (chunk) => {
-    parser.parse(chunk);
+    clientSession.parse(chunk);
   });
 
   socket.on('close', () => {
