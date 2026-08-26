@@ -13,7 +13,7 @@ services:
     network_mode : "host"
     #ports:
       # nginx 监听端口，客户端连接此处
-      #- "8443:8443"
+      #- "8883:8883"
     depends_on:
       - mqtt-broker
 
