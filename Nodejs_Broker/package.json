@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@valkey/valkey-glide": "^2.5.1",
     "mqtt-packet": "^9.0.2"
   }
 }
