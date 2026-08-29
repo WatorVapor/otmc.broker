@@ -1,9 +1,9 @@
 import net from 'net';
 import fs from 'fs';
-import { GlideClient, GlideClusterClient, Logger } from "@valkey/valkey-glide";
 import { ClientSession } from './client_session.mjs';
-import { config } from './config.mjs';
-console.log('MQTT Broker 配置:', config);
+import { KeyValConfig } from './valkey_config.mjs';
+const keyValConfig = new KeyValConfig();
+await keyValConfig.setup();
 const SOCKET_PATH = '/tmp/mqtt/mqtt.sock';
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
