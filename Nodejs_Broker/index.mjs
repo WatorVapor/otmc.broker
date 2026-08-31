@@ -1,9 +1,9 @@
 import net from 'net';
 import fs from 'fs';
 import { ClientSession } from './client_session.mjs';
-import { KeyValConfig } from './valkey_config.mjs';
-const keyValConfig = new KeyValConfig();
-await keyValConfig.setup();
+import { RedisConfig } from './redis_config.mjs';
+const redisConfig = new RedisConfig();
+await redisConfig.setup();
 const SOCKET_PATH = '/tmp/mqtt/mqtt.sock';
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
