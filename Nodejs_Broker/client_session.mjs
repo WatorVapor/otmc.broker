@@ -40,7 +40,7 @@ class ClientSession {
     gClients.delete(clientId);
   }
 }
-export { ClientSession };
+export { ClientSession,gClients };
 
 class ClientSessionInternal {
   constructor() {

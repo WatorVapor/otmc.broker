@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     luarocks \
     libssl-dev \
     build-essential \
+    lua-cjson \
     && luarocks install --lua-version=5.4 luaossl \
     && luarocks install --lua-version=5.4 uuid \
     && apt-get purge -y --auto-remove build-essential luarocks \

@@ -5,7 +5,7 @@ const clientCert = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cl
 const clientKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.key"));
 const config = {
   mqtt: {
-    host: 'mqtt-broker-local10001.wator.xyz',
+    host: '2404:7a82:1be9:3f00:96c6:91ff:fea6:7bd0',
     port: 18883,
   },
   valkey: {

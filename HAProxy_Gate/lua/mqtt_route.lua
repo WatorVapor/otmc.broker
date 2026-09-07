@@ -3,12 +3,14 @@ local x509 = require("openssl.x509")
 local digest  = require "openssl.digest"
 local uuid    = require "uuid"    -- 或自己实现随机 token 生成
 local base58 = require("base58")
+local json    = require("cjson.safe")
 
 -- Redis 配置 (mTLS)
 local REDIS_HOST = "127.0.0.1"
 local REDIS_PORT = 16379
 
 local ALL_BACKENDS_ADDR_KEY = "otmc:all_backends_addr"  -- Redis key for all backend addresses
+local ALL_BACKENDS_ENDPOINTS_KEY = 'otmc:broker:store:endpoints'
 
 
 -- Recursively print table keys with type info (depth 2)
@@ -367,6 +369,50 @@ local function redis_get(key)
     return result, err
 end
 
+local function match_endpoints(txn,backend_endpoints,clientId)
+    local minClientCounter = 1000*1000
+    local indexMin = 0;
+    for index, endpoint in ipairs(backend_endpoints) do
+        if type(endpoint) ~= "table" or not endpoint.host or not endpoint.port then
+            txn:Warning("Invalid backend endpoint at index " .. tostring(index))
+            txn:set_var(txn.f:var("txn.reject"), true)
+            return
+        end
+        txn:Info(string.format("match_endpoints Backend endpoint[%d]: host=%s, port=%s, clientCounter=%s",
+            index, tostring(endpoint.host), tostring(endpoint.port),
+            tostring(endpoint.clientCounter)))
+        if(minClientCounter > endpoint.clientCounter) then
+            minClientCounter = endpoint.clientCounter
+            indexMin = index;
+        end
+    end
+    txn:Info("match_endpoints minClientCounter=<" .. tostring(minClientCounter) .. ">")
+    txn:Info("match_endpoints indexMin=<" .. tostring(indexMin) .. ">")
+    return backend_endpoints[indexMin]
+end
+
+local function calc_backend_endpoint(txn,clientId)
+    txn:Info("calc_backend_endpoint clientId=<".. tostring(clientId) .. ">")
+    local all_backends_endpoints = redis_get(ALL_BACKENDS_ENDPOINTS_KEY)
+    if not all_backends_endpoints then
+        txn:Warning("Failed to get all backends endpoints from Redis")
+        txn:set_var(txn.f:var("txn.reject"), true)
+        return
+    end
+    txn:Info("All backends endpoints: " .. tostring(all_backends_endpoints))
+
+    -- 示例：[{"host":"mqtt-broker-local10001.wator.xyz","port":18883,"clientCounter":0}]
+    local backend_endpoints, json_err = json.decode(all_backends_endpoints)
+    if not backend_endpoints or type(backend_endpoints) ~= "table" then
+        txn:Warning("Failed to parse all backends endpoints JSON: " .. tostring(json_err))
+        txn:set_var(txn.f:var("txn.reject"), true)
+        return
+    end
+    local matched_endpoints = match_endpoints(txn,backend_endpoints,clientId)
+    txn:Info("calc_backend_endpoint matched_endpoints: " .. tostring(matched_endpoints))
+    return matched_endpoints
+end
+
 
 
 -- 主入口
@@ -405,28 +451,27 @@ function process_mqtt_connect(txn)
     local result, err = redis_get(storeKey)  -- 测试读取，确保存储成功
     txn:Info("Redis GET storeKey<" .. tostring(storeKey) .. ">, result: <" .. tostring(result) .. ">, error: " .. tostring(err))
 
-    -- 通过 Proxy Protocol v2 自定义 TLV 传递 token 和 client_id (可选)
-    -- 假设 HAProxy 配置允许设置 TLV 变量
-    local token_tlv_var = txn.f:var("txn.pp2_tlv_0xE0")
-    if token_tlv_var then
-        txn:set_var(token_tlv_var, token)                       -- TLV type 0xE0
-    else
-        txn:Warning("HAProxy variable txn.pp2_tlv_0xE0 is not defined")
+    local matched_endpoint = calc_backend_endpoint(txn,total_hashes)
+    if not matched_endpoint then
+        txn:Warning("Failed to calculate backend endpoint")
+        txn:set_var(txn.f:var("txn.reject"), true)
+        return
     end
-    -- 也可以把 client_id 放入另一个 TLV，方便 broker 快速校验
-    local client_id_tlv_var = txn.f:var("txn.pp2_tlv_0xE1")
-    if client_id_tlv_var then
-        txn:set_var(client_id_tlv_var, client_id)              -- TLV type 0xE1
-    else
-        txn:Warning("HAProxy variable txn.pp2_tlv_0xE1 is not defined")
-    end
+    txn:Info("matched_endpoint<" .. tostring(matched_endpoint) .. ">, matched_endpoint.host: <" .. tostring(matched_endpoint.host) .. ">, matched_endpoint.port: " .. tostring(matched_endpoint.port))
 
-    -- 设置目标地址
-    local ip, port = backend_addr:match("^(.+):(%d+)$")
-    txn:set_dst(ip, tonumber(port))
+    txn:set_var("txn.ssl_c_used", true)
+
+    local dst_ip = matched_endpoint.host
+
+    local dst_port = math.floor(matched_endpoint.port)
+    txn:Info("Resolved backend port: " .. tostring(dst_port))
+    -- tcp-req Lua transactions do not expose set_dst().  Publish the
+    -- destination for HAProxy's set-dst rules instead.
+    txn:set_var("txn.route_dst_ip", dst_ip)
+    txn:set_var("txn.route_dst_port", dst_port)
 
     -- 日志记录
-    txn:Info("Routing " .. client_id .. " to " .. backend_addr)
+    txn:Info("Routing to " .. tostring(dst_ip) .. ":" .. tostring(dst_port))
 end
 
 core.register_action("process_mqtt_connect", { "tcp-req" }, process_mqtt_connect)
