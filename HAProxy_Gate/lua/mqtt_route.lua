@@ -424,7 +424,8 @@ function process_mqtt_connect(txn)
     local pubkeys_hash, total_hashes = extract_certs_chain(txn)
     if not pubkeys_hash or not total_hashes then
         txn:Warning("Failed to extract identity")
-        txn:set_var(txn.f:var("txn.reject"), true)
+        --txn:set_var(txn.f:var("txn.reject"), true)
+        txn:done()
         return
     end
 
