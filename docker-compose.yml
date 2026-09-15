@@ -9,14 +9,12 @@ services:
       - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
       # 挂载共享卷，与 broker 共用
-      - mqtt_socket:/var/run/mqtt
     network_mode : "host"
     #ports:
       # nginx 监听端口，客户端连接此处
       #- "8883:8883"
     depends_on:
       - mqtt-broker
-
   valkey:
     image: valkey/valkey:9.1
     volumes:
@@ -27,6 +25,16 @@ services:
       - "6379:6379"
     command: valkey -c /etc/valkey/valkey.conf
 
+  nginx-inner:
+    image: nginx:alpine
+    volumes:
+      - ./Nginx_Inner/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro
+      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
+      - mqtt_socket:/var/run/mqtt
+    network_mode : "host"
+    depends_on:
+      - haproxy
   mqtt-broker:
     build:
       context: ./
