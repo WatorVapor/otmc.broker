@@ -4,7 +4,7 @@ import { ClientSession } from './client_session.mjs';
 import { RedisConfig } from './redis_config.mjs';
 const redisConfig = new RedisConfig();
 await redisConfig.setup();
-const SOCKET_PATH = '/tmp/mqtt/mqtt.sock';
+const SOCKET_PATH = '/var/run/otmc/mqtt.sock';
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
 }

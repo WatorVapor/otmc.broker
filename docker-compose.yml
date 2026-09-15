@@ -31,6 +31,7 @@ services:
       - ./Nginx_Inner/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
+      - /dev/shm/mqtt/:/var/run/otmc/
       - mqtt_socket:/var/run/mqtt
     network_mode : "host"
     depends_on:
