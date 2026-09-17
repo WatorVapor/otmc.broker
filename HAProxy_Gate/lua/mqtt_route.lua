@@ -470,9 +470,9 @@ function process_mqtt_connect(txn)
     -- destination for HAProxy's set-dst rules instead.
     txn:set_var("txn.route_dst_ip", dst_ip)
     txn:set_var("txn.route_dst_port", dst_port)
-
-    -- 日志记录
-    txn:Info("Routing to " .. tostring(dst_ip) .. ":" .. tostring(dst_port))
+    server_ipv6 = "["..dst_ip.."]"..":"..tostring(dst_port)
+    txn:Info("Routing to server_ipv6=<" .. server_ipv6 .. ">")
+    txn:set_var("txn.mqtt_backend", "mqtt_backend_internal_01")
 end
 
 core.register_action("process_mqtt_connect", { "tcp-req" }, process_mqtt_connect)
