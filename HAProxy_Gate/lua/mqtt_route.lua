@@ -153,33 +153,57 @@ uuid.set_rng(urandom_bytes)
 
 
 
--- 从证书链提取 public key hash 和 publick key
-local function extract_certs_chain(txn)        
+-- 从证书链提取 public key hash 和 public key
+local function extract_certs_chain(txn)
+    -- 获取客户端 leaf 证书 DER
+    local leaf_der = txn.sf:ssl_c_der()
+
     -- 获取客户端证书链 DER
     local chain_blob = txn.sf:ssl_c_chain_der()
-    if not chain_blob or #chain_blob == 0 then
-        txn:Warning("No client certificate chain provided")
+
+    local all_ders = {}
+    local seen = {}
+
+    -- 1. 先加入 leaf 证书
+    if leaf_der and #leaf_der > 0 then
+        table.insert(all_ders, leaf_der)
+        seen[leaf_der] = true
+    end
+
+    -- 2. 再拆分并加入证书链
+    if chain_blob and #chain_blob > 0 then
+        local cert_ders, err = split_der_certificates(chain_blob)
+        if not cert_ders then
+            txn:Warning("Failed to split DER chain: " .. (err or "unknown"))
+        else
+            for _, cert_der in ipairs(cert_ders) do
+                -- 去重，避免 leaf 已经在 chain 中
+                if not seen[cert_der] then
+                    table.insert(all_ders, cert_der)
+                    seen[cert_der] = true
+                end
+            end
+        end
+    end
+
+    -- 3. 如果 leaf 和 chain 都没有，才报错返回
+    if #all_ders == 0 then
+        txn:Warning("No client certificate or certificate chain provided")
         return nil, nil
     end
 
-    -- 拆分 DER 链为单个证书
-    local cert_ders, err = split_der_certificates(chain_blob)
-    if not cert_ders then
-        txn:Warning("Failed to split DER chain: " .. (err or "unknown"))
-        return nil, nil
-    end    
-
-    -- 解析证书链
+    -- 解析证书
     local certs = {}
     local cert_pubkeys = {}
     local cert_hash_list = {}
-    for _, cert_der in ipairs(cert_ders) do
-        local cert, err = x509.new(cert_der,"der")
+    local cert_subjects = {}
+
+    for _, cert_der in ipairs(all_ders) do
+        local cert, err = x509.new(cert_der, "der")
         if not cert then
             txn:Warning("Failed to parse cert in chain: " .. (err or "unknown"))
             return nil, nil
         end
-        --dump_cert_methods(cert)
 
         local subject_name = cert:getSubject()
         local subject_str = "unknown"
@@ -189,29 +213,30 @@ local function extract_certs_chain(txn)
             subject_str = tostring(subject_name)
         end
         txn:Info("certificate subject: " .. subject_str)
-        
+
         -- 解析 public key
         local public_key = cert:getPublicKey()
         txn:Info("certificate public key type: " .. (public_key and public_key:type() or "nil"))
-        -- dump_public_key_methods(public_key)
         txn:Info("certificate public key: " .. (public_key and tostring(public_key) or "nil"))
+
         local dig = digest.new("sha256")
         dig:update(tostring(public_key))
         local pubkey_hash = dig:final()
-        txn:Info("public key SHA256 hash: " .. (pubkey_hash and bin2b58(pubkey_hash) or "nil"))
-        
+        local hash_b58 = bin2b58(pubkey_hash)
+
+        txn:Info("public key SHA256 hash: " .. (pubkey_hash and hash_b58 or "nil"))
+
         table.insert(certs, cert)
-        cert_pubkeys[bin2b58(pubkey_hash)] = public_key
-        table.insert(cert_hash_list, bin2b58(pubkey_hash))
+        cert_pubkeys[hash_b58] = public_key
+        cert_subjects[hash_b58] = subject_name
+        table.insert(cert_hash_list, hash_b58)
     end
-    txn:Info("Extracted " .. #certs .. " certificates in chain")    
+
+    txn:Info("Extracted " .. #certs .. " certificates in chain")
     txn:Info("Extracted " .. #cert_hash_list .. " certificate hashes")
-    local total_hashes = table.concat(cert_hash_list, "_")
-    txn:Info("Certificate public key hashes: " .. total_hashes)
-    for keyHash, certPubKey in pairs(cert_pubkeys) do
-        txn:Info("Certificate public key: " .. keyHash.. " -> " .. tostring(certPubKey))
-    end
-    return cert_pubkeys, total_hashes
+
+
+    return cert_pubkeys, cert_hash_list,cert_subjects
 end
 
 
@@ -473,6 +498,83 @@ function process_mqtt_connect(txn)
     server_ipv6 = "["..dst_ip.."]"..":"..tostring(dst_port)
     txn:Info("Routing to server_ipv6=<" .. server_ipv6 .. ">")
     txn:set_var("txn.mqtt_backend", "mqtt_backend_internal_01")
+
 end
 
 core.register_action("process_mqtt_connect", { "tcp-req" }, process_mqtt_connect)
+
+
+
+local function base58_prefix_to_int(s)
+  if not s or s == "" then return nil end
+
+  local decoded = base58.decode(s)
+  if #decoded < 4 then
+    core.Warning("base58_prefix_to_int: bad input [" .. tostring(s) .. "]")
+    return nil
+  end
+
+  local b1, b2, b3, b4 = decoded:byte(1, 4)
+  return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4
+end
+
+local function xor_distance_int(a, b)
+    return a ~ b  -- Lua 5.3 原生按位异或
+end
+
+local function calculate_distance(a, b)
+    local a_int = base58_prefix_to_int(a)
+    local b_int = base58_prefix_to_int(b)
+    return xor_distance_int(a_int, b_int)
+end
+
+local function find_fastest_backend(txn, last_hash, all_backends)
+    local fastest_backend = nil
+    local fastest_distance = 0
+
+    for backend_id, backend_name in pairs(all_backends) do
+        local distance = math.abs(calculate_distance(last_hash, backend_id))
+        txn:Info("Distance from last_hash <" .. last_hash .. "> to backend_id <" .. backend_id .. "> is " .. tostring(distance))
+        if not fastest_distance or distance > fastest_distance then
+            fastest_distance = distance
+            fastest_backend = backend_name
+        end
+    end
+    txn:Info("Fastest backend for last_hash <" .. last_hash .. "> is <" .. tostring(fastest_backend) .. "> with distance " .. tostring(fastest_distance))
+
+    return fastest_backend
+end
+
+local function match_backend_by_dht(txn)
+    local pubkeys_hash, cert_hash_list, cert_subjects = extract_certs_chain(txn)
+    if not pubkeys_hash or not cert_hash_list then
+        txn:Warning("Failed to extract identity")
+        --txn:set_var(txn.f:var("txn.reject"), true)
+        txn:done()
+        return
+    end
+    txn:Info("match_backend_by_dht cert_hash_list:=<" .. table.concat(cert_hash_list, "_").. " > ")
+    -- 选择最后一个证书的 public key hash 作为空间标识符
+    local last_hash = cert_hash_list[#cert_hash_list]
+    txn:Info("match_backend_by_dht last Certificate public key hash:=<" .. last_hash .. ">")
+    local last_subject_name = cert_subjects[last_hash]
+    txn:Info("match_backend_by_dht last Certificate subject name:=<" .. tostring(last_subject_name) .. ">")
+
+    local all_mqtt_backends = {};
+    for backend_name, backend in pairs(core.backends) do
+        txn:Info("Available backend: " .. backend_name)
+        if backend_name:match("^mqtt_backend_") then
+            local backend_id = backend_name:gsub("^mqtt_backend_", "")
+            all_mqtt_backends[backend_id] = backend_name
+        end
+    end
+    local fastest_backend = find_fastest_backend(txn, last_hash, all_mqtt_backends)
+
+    txn:set_var("txn.target_backend", fastest_backend)
+    return
+end
+
+
+
+core.register_action("match_backend_by_dht", { "tcp-req" }, match_backend_by_dht)
+
