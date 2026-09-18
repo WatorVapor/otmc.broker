@@ -5,7 +5,7 @@ function connectWithMTLS() {
   let ca, cert, key;
   try {
     ca   = fs.readFileSync('./server_cert/server-root.crt');        // 验证服务器的 CA
-    cert = fs.readFileSync('./client_cert/client.fullchain.crt');   // 客户端证书（含中间 CA 也行）
+    cert = fs.readFileSync('./client_cert/client.space.chain.crt');   // 客户端证书（含中间 CA）
     key  = fs.readFileSync('./client_cert/client-space-leaf.key');  // 客户端私钥
   } catch (err) {
     console.error('证书文件读取失败:', err.message);
