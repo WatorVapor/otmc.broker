@@ -9,6 +9,7 @@ services:
       - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/internal_cert:/usr/local/etc/certs/internal_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
+      - /dev/shm/haproxy:/var/run/haproxy
       # 挂载共享卷，与 broker 共用
     network_mode : "host"
     #ports:

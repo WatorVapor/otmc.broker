@@ -4,38 +4,6 @@ const caCert = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluste
 const clientCert = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.crt"));
 const clientKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.key"));
 const config = {
-  mqtt: {
-    host: '2404:7a82:1be9:3f00:96c6:91ff:fea6:7bd0',
-    port: 18883,
-  },
-  valkey: {
-    address: [
-      {
-        host: 'valkey-cluster-conoha-pdf-coltd.wator.xyz',
-        port: 6379,
-      },
-      {
-        host: 'valkey-cluster-conoha-wator.wator.xyz',
-        port: 6379,
-      },
-      {
-        host: 'valkey-cluster-conoha-ndhealth.wator.xyz',
-        port: 6379,
-      }
-    ],
-    useTLS: true,
-    advancedConfiguration: {
-      logLevel: 'trace',
-      tlsAdvancedConfiguration: {
-        insecure: true,
-        verify_hostname: false, 
-        verifyPeer: false,
-        rootCertificates: caCert,
-        cert: clientCert,
-        key: clientKey,
-      }
-    }
-  },
   redis: {
     rootNodes: [
       { socket: { host: 'valkey-cluster-conoha-pdf-coltd.wator.xyz', port: 6379 } },
