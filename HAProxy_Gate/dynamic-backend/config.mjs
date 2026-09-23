@@ -20,6 +20,13 @@ const config = {
         }
     }
   },
+  haproxy: {
+    socketPath: '/var/run/haproxy/admin.sock',
+    haproxyBackendPath: '/usr/local/etc/haproxy/backends',
+    commandTimeoutMs: 5000,
+    ca: '/usr/local/etc/certs/internal_cert/internal-root.crt',
+    crt: '/usr/local/etc/certs/internal_cert/internal-client.crt.key.pem',
+  }
 };
 
 export { config };
