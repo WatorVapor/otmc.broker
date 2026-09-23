@@ -34,7 +34,12 @@ class ClientSession {
     }
   }
   parse(chunk) {
-    this.parser.parse(chunk);
+    try {
+      this.parser.parse(chunk);
+    } catch (error) {
+      console.log('Raw data (hex):', chunk.slice(0, 10).toString('hex'));
+      console.error('解析 MQTT 包时出错:', error);
+    }
   }
   delete(clientId) {
     gClients.delete(clientId);

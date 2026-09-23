@@ -242,17 +242,26 @@ end
 
 
 
-local function base58_prefix_to_int(s)
+local function base58_prefix_to_int64(s)
   if not s or s == "" then return nil end
 
   local decoded = base58.decode(s)
-  if #decoded < 4 then
-    core.Warning("base58_prefix_to_int: bad input [" .. tostring(s) .. "]")
+  if #decoded < 8 then
+    core.Warning("base58_prefix_to_int64: bad input [" .. tostring(s) .. "]")
     return nil
   end
 
-  local b1, b2, b3, b4 = decoded:byte(1, 4)
-  return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4
+  local b1,b2,b3,b4,b5,b6,b7,b8 = decoded:byte(1, 8)
+  local v = 0
+  v = v | (b1 << 56)
+  v = v | (b2 << 48)
+  v = v | (b3 << 40)
+  v = v | (b4 << 32)
+  v = v | (b5 << 24)
+  v = v | (b6 << 16)
+  v = v | (b7 << 8)
+  v = v | b8
+  return v
 end
 
 local function xor_distance_int(a, b)
@@ -260,27 +269,41 @@ local function xor_distance_int(a, b)
 end
 
 local function calculate_distance(a, b)
-    local a_int = base58_prefix_to_int(a)
-    local b_int = base58_prefix_to_int(b)
+    local a_int = base58_prefix_to_int64(a)
+    local b_int = base58_prefix_to_int64(b)
+    if not a_int or not b_int then return nil end
     return xor_distance_int(a_int, b_int)
 end
 
-local function find_fastest_backend(txn, last_hash, all_backends)
-    local fastest_backend = nil
-    local fastest_distance = 0
+local function find_closest_backend(txn, last_hash, all_backends)
+    local closest_backend = nil
+    local closest_distance = nil   -- 用 nil 初始化
 
     for backend_id, backend_name in pairs(all_backends) do
-        local distance = math.abs(calculate_distance(last_hash, backend_id))
-        txn:Info("Distance from last_hash <" .. last_hash .. "> to backend_id <" .. backend_id .. "> is " .. tostring(distance))
-        if not fastest_distance or distance > fastest_distance then
-            fastest_distance = distance
-            fastest_backend = backend_name
+        local distance = calculate_distance(last_hash, backend_id)
+        if distance ~= nil then
+            txn:Info("Distance from last_hash <" .. last_hash ..
+                     "> to backend_id <" .. backend_id ..
+                     "> is " .. tostring(distance))
+
+            -- 使用无符号比较：math.ult(m, n) 表示 m < n
+            if closest_distance == nil or math.ult(distance, closest_distance) then
+                closest_distance = distance
+                closest_backend = backend_name
+            end
+        else
+            txn:Warning("Failed to calculate distance for backend_id <" ..
+                        tostring(backend_id) .. ">")
         end
     end
-    txn:Info("Fastest backend for last_hash <" .. last_hash .. "> is <" .. tostring(fastest_backend) .. "> with distance " .. tostring(fastest_distance))
 
-    return fastest_backend
+    txn:Info("Closest backend for last_hash <" .. last_hash ..
+             "> is <" .. tostring(closest_backend) ..
+             "> with distance " .. tostring(closest_distance))
+
+    return closest_backend
 end
+
 
 local function match_backend_by_dht(txn)
     local pubkeys_hash, cert_hash_list, cert_subjects = extract_certs_chain(txn)
@@ -305,9 +328,9 @@ local function match_backend_by_dht(txn)
             all_mqtt_backends[backend_id] = backend_name
         end
     end
-    local fastest_backend = find_fastest_backend(txn, last_hash, all_mqtt_backends)
+    local closest_backend = find_closest_backend(txn, last_hash, all_mqtt_backends)
 
-    txn:set_var("txn.target_backend", fastest_backend)
+    txn:set_var("txn.target_backend", closest_backend)
     return
 end
 

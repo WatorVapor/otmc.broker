@@ -1,6 +1,6 @@
 import mqtt from 'mqtt';
 
-const brokerUrl = 'mqtt+unix:///tmp/mqtt/mqtt.sock'; // Replace with your broker URL
+const brokerUrl = 'mqtt+unix:///var/run/otmc/mqtt.sock'; // Replace with your broker URL
 const client = mqtt.connect(brokerUrl);
 
 client.on('connect', () => {
