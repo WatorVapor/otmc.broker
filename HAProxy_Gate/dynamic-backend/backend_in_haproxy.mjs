@@ -1,5 +1,8 @@
 import net from 'node:net';
 import { config } from './config.mjs';
+import * as fs from 'node:fs';
+import path from 'path';
+import { execSync } from 'node:child_process';
 
 // ============ 配置区 ============
 const SOCKET_PATH = config.haproxy.socketPath;
@@ -67,44 +70,15 @@ const generateBackendConfig = (nodeId, peerBackend) => {
 };
 
 
-/**
- * 动态添加一个 Backend 及其服务器
- */
-async function addBackend(backend) {
-    const { name,  mode, servers } = backend;
-
-    // 1) 开启实验模式并添加 Backend
-    //    注意：experimental-mode 只在当前连接有效，所以每条命令都带上
-    const addBackendCmd =
-        `experimental-mode on; add backend ${name} from ${backend.defaults} mode ${mode}`;
-    console.log(`[ADD]     ${addBackendCmd}`);
-    await executeRuntimeCommand(addBackendCmd);
-
-    // 2) 添加服务器
-    for (const server of servers) {
-        let cmd = `experimental-mode on;add server ${name}/${server.name} ${server.address}`;
-        //cmd += ` ssl verify required`;
-        //cmd += ` ssl ca-file ${config.haproxy.ca} crt ${config.haproxy.crt}`;
-        //cmd += `  verify required `;
-        console.log(`[ADD]     ${cmd}`);
-        await executeRuntimeCommand(cmd);
+const reloadHaproxyConfig = async () => {
+    try {
+        execSync('docker kill -s HUP otmc-haproxy');
+        execSync('sleep 3'); // 等待 HAProxy 重新加载配置
+        console.log('reloadHaproxyConfig: HAProxy configuration reloaded successfully.');
+    } catch (error) {
+        console.error('reloadHaproxyConfig: Error reloading HAProxy configuration:', error);
     }
-
-    // 3) 发布 Backend，使其开始接收流量
-    const publishCmd = `experimental-mode on; publish backend ${name}`;
-    console.log(`[PUBLISH] ${publishCmd}`);
-    await executeRuntimeCommand(publishCmd);
 }
-
-/**
- * 删除一个 Backend
- */
-async function deleteBackend(name) {
-    const cmd = `experimental-mode on; del backend ${name}`;
-    console.log(`[DELETE]  ${cmd}`);
-    await executeRuntimeCommand(cmd);
-}
-
 
 
 class BackendOfHaproxy {
@@ -122,40 +96,22 @@ class BackendOfHaproxy {
         fs.writeFileSync(backendFilePath, backendConfig);
         console.log(`[ADD] BackendOfHaproxy.addBackend: backendFilePath:=<`, backendFilePath, `>`);
         // 重新加载 HAProxy 配置
-        await executeRuntimeCommand('reload');
+        await reloadHaproxyConfig();
         console.log(`[ADD] BackendOfHaproxy.addBackend: reload haproxy config done.`);
-        /*
         const currentBackends = await listCurrentBackends();
         console.log(`[ADD] BackendOfHaproxy.addBackend: currentBackends:=<`, currentBackends, `>`);
-        */
     }
     static async deleteBackend(nodeId) {
         const backendFilePath = path.join(config.haproxy.haproxyBackendPath, `mqtt_backend_${nodeId}.cfg`);
         if (fs.existsSync(backendFilePath)) {
-            fs.unlinkSync(backendFilePath);
+            fs.rmSync(backendFilePath, { force: true });
             console.log(`[DELETE] BackendOfHaproxy.deleteBackend: Deleted backend file: ${backendFilePath}`);
         }
         // 重新加载 HAProxy 配置
-        await executeRuntimeCommand('reload');
+        await reloadHaproxyConfig();
         console.log(`[DELETE] BackendOfHaproxy.deleteBackend: reload haproxy config done.`);
-
-        /*
-        const backend = {
-            name: `mqtt_backend_${nodeId}`,
-            defaults: 'dynamic_mqtt_defaults',
-            mode: 'tcp',
-            servers: [
-                {
-                    name: `mqtt_server_${nodeId.slice(0, 10)}`, // 取前10个字节作为服务器名称
-                    address: `[${peerBackend.host}]:${peerBackend.port}`,
-                }
-            ]
-        };
-        console.log(`[ADD] BackendOfHaproxy.addBackend: backend:=<`, backend, `>`);
-        await addBackend(backend);
         const currentBackends = await listCurrentBackends();
         console.log(`[ADD] BackendOfHaproxy.addBackend: currentBackends:=<`, currentBackends, `>`);
-        */
     }
 }
 
