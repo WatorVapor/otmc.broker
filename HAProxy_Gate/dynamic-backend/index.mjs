@@ -1,5 +1,6 @@
 import { BackendInRedis } from './backend_redis.mjs';
 import { BackendOfHaproxy } from './backend_in_haproxy.mjs';
+import { PubSubRedis } from './pubsub_redis.mjs';
 
 // ============ 执行 ============
 async function main() {
@@ -24,4 +25,10 @@ async function main() {
 }
 
 main();
+
+
+PubSubRedis.registerBrokerUpdates(async (message) => {
+    console.log('dynamic-backend: Redis PubSub message received for broker updates:', message);
+    await main();
+});
 

@@ -22,6 +22,7 @@ services:
       - mqtt-broker
   valkey:
     image: valkey/valkey:9.1
+    container_name: otmc-valkey
     volumes:
       - ./valkey/valkey.conf:/etc/valkey/valkey.conf
       - ./valkey_data:/data
@@ -32,6 +33,7 @@ services:
 
   nginx-inner:
     image: nginx:alpine
+    container_name: otmc-nginx-inner
     volumes:
       - ./Nginx_Inner/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro
@@ -43,6 +45,7 @@ services:
     depends_on:
       - haproxy
   mqtt-broker:
+    container_name: otmc-mqtt-broker
     build:
       context: ./
       dockerfile: ./CXX_Broker/Dockerfile.runtime
