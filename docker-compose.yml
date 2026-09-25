@@ -19,17 +19,19 @@ services:
       # nginx 监听端口，客户端连接此处
       #- "8883:8883"
     depends_on:
-      - mqtt-broker
-  valkey:
-    image: valkey/valkey:9.1
-    container_name: otmc-valkey
+      - mqtt-broker-nodejs
+
+  haproxy-syncbackend:
+    container_name: otmc-haproxy-syncbackend
+    image: node:26
     volumes:
-      - ./valkey/valkey.conf:/etc/valkey/valkey.conf
-      - ./valkey_data:/data
-    ports:
-      # valkey 监听端口，客户端连接此处
-      - "6379:6379"
-    command: valkey -c /etc/valkey/valkey.conf
+      - ./HAProxy_Gate/dynamic-backend:/app
+      - ./HAProxy_Gate/backends:/usr/local/etc/haproxy/backends
+      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
+      - /dev/shm/haproxy:/var/run/haproxy
+    working_dir: /app
+    command: node ./index.mjs
+    network_mode : "host"
 
   nginx-inner:
     image: nginx:alpine
@@ -39,23 +41,31 @@ services:
       - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro
       - /opt/otmc-deploy/otmc.secret/broker/internal_cert:/usr/local/etc/certs/internal_cert:ro
-      - /dev/shm/mqtt/:/var/run/otmc/
-      - mqtt_socket:/var/run/mqtt
+      - /dev/shm/otmc/:/var/run/otmc/
     network_mode : "host"
     depends_on:
       - haproxy
-  mqtt-broker:
-    container_name: otmc-mqtt-broker
-    build:
-      context: ./
-      dockerfile: ./CXX_Broker/Dockerfile.runtime
+
+  mqtt-broker-nodejs:
+    container_name: otmc-mqtt-broker-nodejs
+    image: node:26
     volumes:
-      # 同一共享卷，broker 在此创建 socket 文件
-      - mqtt_socket:/var/run/mqtt              
-    environment:
-      # 假设您的 broker 通过环境变量指定路径
-      - SOCKET_PATH=/var/run/mqtt/broker.external.sock  
+      - ./Nodejs_Broker:/app
+      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
+      - /dev/shm/otmc/:/var/run/otmc/
+    working_dir: /app
+    command: node ./index.mjs
+    network_mode : "host"
+
+  valkey:
+    image: valkey/valkey:9.1
+    container_name: otmc-valkey
+    volumes:
+      - ./valkey/valkey.conf:/etc/valkey/valkey.conf
+      - ./valkey_data:/data
+    command: valkey -c /etc/valkey/valkey.conf
+
+
 volumes:
   # 定义共享卷，用于传递 Unix socket 文件
-  mqtt_socket:   
   valkey_data:
