@@ -15,6 +15,9 @@ const KEY_STORE_ENDPOINT_TTL_SECONDS = 60; // 10 seconds
 const KEY_STORE_ENDPOINT_UPDATE_NEXT_MS = 10 * 1000;
 
 
+const TOPIC_ENDPOINT_UPDATE_KEY = 'otmc:broker:endpoint:update';
+
+
 class RedisConfig {
   constructor() {
     this.valkeyConfig = config.valkey;
@@ -80,6 +83,8 @@ class RedisConfig {
     const endpointKey = `${KEY_STORE_ENDPOINT_KEY}:${this.nodeId}`;
     await this.cluster.set(endpointKey, JSON.stringify(newEndpoint2), options);
 
+    await this.cluster.publish(TOPIC_ENDPOINT_UPDATE_KEY, JSON.stringify({}));
+
     setTimeout(async () => {
       await this.updateStoreEndpointOfNode(newEndpoint);
     }, KEY_STORE_ENDPOINT_UPDATE_NEXT_MS);
@@ -90,6 +95,7 @@ class RedisConfig {
   getConfig() {
 
   }
+
 }
 
 export { RedisConfig };
