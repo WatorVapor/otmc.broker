@@ -14,22 +14,16 @@ function connectWithMTLS() {
 
   const options = {
     clientId: 'client_mtls_' + Math.random().toString(16).substring(2, 10),
-    reconnectPeriod: 0,          // 调试时禁用自动重连
+    protocolVersion: 5,
     clean: true,
-
-    // TLS 配置
-    rejectUnauthorized: false, // 确保服务器证书有效
-
     ca: ca,
     cert: cert,
     key: key,
-    // 临时绕过主机名检查（仅测试！）
-    checkServerIdentity: (host, cert) => {
-      // 可以在这里加自定义校验，返回 undefined 表示接受
-      console.log('服务器证书:', cert);
-      console.log('服务器主机名:', host);
-      return undefined;
-    },
+    properties: {
+      userProperties:{
+        cert:cert
+      }
+    }
   };
 
   const client = mqtt.connect('mqtts://mqtt-broker-local10001.wator.xyz:8883', options);
@@ -48,7 +42,7 @@ function connectWithMTLS() {
   });
 
   client.on('error', (err) => {
-    console.error('连接错误:', err.message);
+    console.error('err:=<', err,'>');
   });
 }
 

@@ -1,6 +1,10 @@
 import mqttPacket from 'mqtt-packet';
 const gClients = new Map();
 
+const MQTT_5_OPTION = {
+  protocolVersion: 5 
+};
+
 class ClientSession {
   constructor(socket) {
     this.socket = socket;
@@ -52,18 +56,19 @@ class ClientSessionInternal {
     this.subscriptions = new Set();
   }
   handleConnect(socket, packet,client) {
+    console.log('ClientSessionInternal:handleConnect:packet=<',packet,'>');
     const clientId = packet.clientId || `client_${Math.random().toString(16).substring(2, 10)}`;
     socket.clientId = clientId;
-
     gClients.set(clientId, client);
-
-    console.log(`[Connect] 客户端已连接: ${clientId}`);
-
-    const connackPacket = mqttPacket.generate({
+    console.log('ClientSessionInternal:handleConnect:clientId=<',clientId,'>');
+    const responsePacketObj = {
       cmd: 'connack',
-      returnCode: 0,
-      sessionPresent: false
-    });
+      reasonCode: 0,
+      sessionPresent: false,
+    };
+    console.log('ClientSessionInternal:handleConnect:responsePacketObj=<',responsePacketObj,'>');
+    const connackPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
+    console.log('ClientSessionInternal:handleConnect:connackPacket=<',connackPacket,'>');
     socket.write(connackPacket);
   }
 
@@ -80,7 +85,7 @@ class ClientSessionInternal {
       cmd: 'suback',
       messageId: packet.messageId,
       granted
-    });
+    },MQTT_5_OPTION);
     socket.write(subackPacket);
   }
 
@@ -97,7 +102,7 @@ class ClientSessionInternal {
           qos: 0,
           retain: false,
           dup: false
-        });
+        },MQTT_5_OPTION);
         client.socket.write(pubPacket);
         console.log(`  └─> 转发给: ${clientId}`);
       }
@@ -107,7 +112,7 @@ class ClientSessionInternal {
   handlePingreq(socket) {
     const pingrespPacket = mqttPacket.generate({
       cmd: 'pingresp'
-    });
+    },MQTT_5_OPTION);
     socket.write(pingrespPacket);
   } 
 
