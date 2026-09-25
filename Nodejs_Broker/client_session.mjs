@@ -1,9 +1,14 @@
 import mqttPacket from 'mqtt-packet';
+import crypto from 'node:crypto';
+
 const gClients = new Map();
+const pendingChallenges = new Map();
 
 const MQTT_5_OPTION = {
   protocolVersion: 5 
 };
+const MQTT_5_REASON_CODE_CONTINUE_AUTH = 0x18
+
 
 class ClientSession {
   constructor(socket) {
@@ -61,15 +66,25 @@ class ClientSessionInternal {
     socket.clientId = clientId;
     gClients.set(clientId, client);
     console.log('ClientSessionInternal:handleConnect:clientId=<',clientId,'>');
+    if(packet && packet.properties && packet.properties.userProperties) {
+      console.log('ClientSessionInternal:handleConnect:packet.properties.userProperties=<',packet.properties.userProperties,'>');
+    }
+    const challenge = crypto.randomBytes(32);
+    pendingChallenges.set(clientId, challenge);
+    console.log('ClientSessionInternal:handleConnect:challenge=<',challenge.toString('base64'),'>');
     const responsePacketObj = {
-      cmd: 'connack',
-      reasonCode: 0,
-      sessionPresent: false,
+      cmd: 'auth',
+      reasonCode: MQTT_5_REASON_CODE_CONTINUE_AUTH,
+      properties: { 
+        authenticationMethod: 'certchain', 
+        authenticationData: challenge  
+      }
     };
+
     console.log('ClientSessionInternal:handleConnect:responsePacketObj=<',responsePacketObj,'>');
-    const connackPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
-    console.log('ClientSessionInternal:handleConnect:connackPacket=<',connackPacket,'>');
-    socket.write(connackPacket);
+    const authPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
+    console.log('ClientSessionInternal:handleConnect:authPacket=<',authPacket,'>');
+    socket.write(authPacket);
   }
 
   handleSubscribe(socket, packet) {
