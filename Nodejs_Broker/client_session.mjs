@@ -77,7 +77,7 @@ class ClientSessionInternal {
       reasonCode: MQTT_5_REASON_CODE_CONTINUE_AUTH,
       properties: { 
         authenticationMethod: 'certchain', 
-        authenticationData: challenge  
+        authenticationData: challenge.toString('base64')
       }
     };
 

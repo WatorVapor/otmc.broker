@@ -1,5 +1,7 @@
 const mqtt = require('mqtt');
 const fs = require('fs');
+const { timeStamp } = require('console');
+const crypto = require('crypto');
 
 const ACL_REQUEST = {
   read: ['secure/topic'], 
@@ -7,7 +9,7 @@ const ACL_REQUEST = {
   all:[]
 };
 
-function connectWithMTLS() {
+const connectWithMTLS = () => {
   let ca, cert, key;
   try {
     ca   = fs.readFileSync('./server_cert/server-root.crt');        // 验证服务器的 CA
@@ -61,7 +63,35 @@ function connectWithMTLS() {
       console.error('AUTH 报文中缺少挑战数据');
       return callback(new Error('Missing challenge data'), null);
     }
-    console.log('connectWithMTLS:handleAuth:challenge=<',challenge.toString('base64'),'>');
+    console.log('connectWithMTLS:handleAuth:challenge=<',challenge.toString(),'>');
+    const challengeMsg = {
+      challenge: challenge.toString(),
+      timeStamp: (new Date()).toISOString()
+    }
+    console.log('connectWithMTLS:handleAuth:challengeMsg=<',challengeMsg,'>');
+
+    // Create signature for challengeMsg
+    const signature = crypto.createSign('SHA256');
+    signature.update(JSON.stringify(challengeMsg));
+    signature.end();
+    const signedData = signature.sign(key, 'base64');
+
+    console.log('connectWithMTLS:handleAuth:=<', signedData, '>');
+  
+    const challengedMsg = [
+     {
+      challenge: challengeMsg,
+      signedData: signedData
+     } 
+    ];
+    // Send AUTH response with signature
+    callback(null, {
+      reasonCode: 0,
+      properties: {
+        authenticationMethod: 'certchain',
+        authenticationData: JSON.stringify(challengedMsg)
+      }
+    });    
   };
 }
 
