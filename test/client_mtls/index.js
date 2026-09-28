@@ -57,41 +57,52 @@ const connectWithMTLS = () => {
   });
 
   client.handleAuth = (packet, callback) => {
-    console.log('connectWithMTLS:handleAuth:packet=<',packet,'>');
-    const challenge = packet.properties?.authenticationData;
-    if (!challenge) {
-      console.error('AUTH 报文中缺少挑战数据');
-      return callback(new Error('Missing challenge data'), null);
-    }
-    console.log('connectWithMTLS:handleAuth:challenge=<',challenge.toString(),'>');
-    const challengeMsg = {
-      challenge: challenge.toString(),
-      timeStamp: (new Date()).toISOString()
-    }
-    console.log('connectWithMTLS:handleAuth:challengeMsg=<',challengeMsg,'>');
-
-    // Create signature for challengeMsg
-    const signature = crypto.createSign('SHA256');
-    signature.update(JSON.stringify(challengeMsg));
-    signature.end();
-    const signedData = signature.sign(key, 'base64');
-
-    console.log('connectWithMTLS:handleAuth:=<', signedData, '>');
-  
-    const challengedMsg = [
-     {
-      challenge: challengeMsg,
-      signedData: signedData
-     } 
-    ];
-    // Send AUTH response with signature
-    callback( {
-      properties: {
-        authenticationMethod: 'certchain',
-        authenticationData: JSON.stringify(challengedMsg)
-      }
-    });    
+    handleAuth(packet, callback,key,cert);
   };
 }
 
 connectWithMTLS();
+
+const handleAuth = (packet, callback,key,cert) => {
+  console.log('connectWithMTLS:handleAuth:packet=<',packet,'>');
+  const challenge = packet.properties?.authenticationData;
+  if (!challenge) {
+    console.error('AUTH 报文中缺少挑战数据');
+    return callback(new Error('Missing challenge data'), null);
+  }
+  console.log('connectWithMTLS:handleAuth:challenge=<',challenge.toString(),'>');
+  const challengeMsg = {
+    challenge: challenge.toString(),
+    timeStamp: (new Date()).toISOString()
+  }
+  console.log('connectWithMTLS:handleAuth:challengeMsg=<',challengeMsg,'>');
+
+  // Create signature for challengeMsg
+  const signature = crypto.createSign('SHA256');
+  signature.update(JSON.stringify(challengeMsg));
+  signature.end();
+  const signedChallenge = signature.sign(key, 'base64');
+
+  const challengedMsg = {
+    "type": "client_auth",
+    "challenges": [
+      {
+        "challenge": challengeMsg,
+        "signature": signedChallenge,
+      }
+    ],
+    "cert": cert.toString()
+
+  };
+  console.log('connectWithMTLS:challengedMsg:=<', challengedMsg, '>');
+
+  // Send AUTH response with signature
+  callback(null, {
+    cmd: 'auth',
+    reasonCode: 0x18, 
+    properties: {
+      authenticationMethod: 'certchain',
+      authenticationData: JSON.stringify(challengedMsg)
+    }
+  });
+}

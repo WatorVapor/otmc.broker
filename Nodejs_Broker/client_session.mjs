@@ -26,6 +26,9 @@ class ClientSession {
       case 'connect':
         this.internal.handleConnect(socket, packet, this);
         break;
+      case 'auth':
+        this.internal.handleAuth(socket, packet, this);
+        break;
       case 'publish':
         this.internal.handlePublish(socket, packet);
         break;
@@ -85,6 +88,29 @@ class ClientSessionInternal {
     const authPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
     console.log('ClientSessionInternal:handleConnect:authPacket=<',authPacket,'>');
     socket.write(authPacket);
+  }
+  handleAuth(socket, packet,client) {
+    console.log('ClientSessionInternal:handleAuth:packet=<',packet,'>');
+    // todo check cert chain
+    const packProp = packet.properties;
+    console.log('ClientSessionInternal:handleAuth:packProp=<', packProp, '>');
+    if(packProp.authenticationMethod === 'certchain') {
+      const authData = packProp.authenticationData.toString();
+      console.log('ClientSessionInternal:handleAuth:authData=<', authData, '>');
+      const authDataJson = JSON.parse(authData);
+      console.log('ClientSessionInternal:handleAuth:authDataJson=<', authDataJson, '>');
+
+    }
+    const responsePacketObj = {
+      cmd: 'connack',
+      reasonCode: 0,
+      sessionPresent: false,
+      properties: { 
+      }
+    };
+    const conPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
+    console.log('ClientSessionInternal:handleAuth:conPacket=<',conPacket,'>');
+    socket.write(conPacket);
   }
 
   handleSubscribe(socket, packet) {
