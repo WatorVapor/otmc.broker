@@ -85,8 +85,7 @@ const connectWithMTLS = () => {
      } 
     ];
     // Send AUTH response with signature
-    callback(null, {
-      reasonCode: 0,
+    callback( {
       properties: {
         authenticationMethod: 'certchain',
         authenticationData: JSON.stringify(challengedMsg)
