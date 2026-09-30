@@ -9,3 +9,10 @@ services:
       - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/etc/valkey/tls
     command: >
       valkey-server /etc/valkey/valkey.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
