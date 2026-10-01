@@ -20,6 +20,13 @@ services:
       #- "8883:8883"
     depends_on:
       - mqtt-broker-nodejs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
 
   haproxy-syncbackend:
     container_name: otmc-haproxy-syncbackend
@@ -32,6 +39,13 @@ services:
     working_dir: /app
     command: node ./index.mjs
     network_mode : "host"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
 
   nginx-inner:
     image: nginx:alpine
@@ -45,6 +59,13 @@ services:
     network_mode : "host"
     depends_on:
       - haproxy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
 
   mqtt-broker-nodejs:
     container_name: otmc-mqtt-broker-nodejs
@@ -56,6 +77,13 @@ services:
     working_dir: /app
     command: node ./index.mjs
     network_mode : "host"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
 
   valkey:
     image: valkey/valkey:9.1
@@ -64,8 +92,13 @@ services:
       - ./valkey/valkey.conf:/etc/valkey/valkey.conf
       - ./valkey_data:/data
     command: valkey -c /etc/valkey/valkey.conf
-
-
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
 volumes:
   # 定义共享卷，用于传递 Unix socket 文件
   valkey_data:

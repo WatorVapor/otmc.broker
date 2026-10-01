@@ -1,5 +1,6 @@
 import mqttPacket from 'mqtt-packet';
 import crypto from 'node:crypto';
+import { config } from './config.mjs';
 
 const gClients = new Map();
 const pendingChallenges = new Map();
@@ -99,11 +100,29 @@ class ClientSessionInternal {
       console.log('ClientSessionInternal:handleAuth:authData=<', authData, '>');
       const authDataJson = JSON.parse(authData);
       console.log('ClientSessionInternal:handleAuth:authDataJson=<', authDataJson, '>');
-
+      const clientCert = authDataJson.cert;
+      console.log('ClientSessionInternal:handleAuth:clientCert=<', clientCert, '>');
+      // verify cert chain
+      const isValid = this.verifyCertChain(clientCert);
+      console.log('ClientSessionInternal:handleAuth:isValid=<', isValid, '>');
+      if(!isValid) {
+        console.log('ClientSessionInternal:handleAuth:Invalid certificate chain');
+        const responsePacketObj = {
+          cmd: 'connack',
+          reasonCode: 0x10,// error
+          sessionPresent: false,
+          properties: { }
+        }
+        const conPacket = mqttPacket.generate(responsePacketObj,MQTT_5_OPTION);
+        console.log('ClientSessionInternal:handleAuth:conPacket=<',conPacket,'>');
+        socket.write(conPacket);
+        socket.end();
+        return;
+      }
     }
     const responsePacketObj = {
       cmd: 'connack',
-      reasonCode: 0,
+      reasonCode: 0x10, // error
       sessionPresent: false,
       properties: { 
       }
@@ -167,5 +186,13 @@ class ClientSessionInternal {
 
   hasSubscription(topic) {
     return this.subscriptions.has(topic);
+  }
+
+  verifyCertChain(clientCert) {
+    const rootCert = config.mqtt.client.caRoot;
+    console.log('ClientSessionInternal:verifyCertChain:rootCert=<', rootCert.toString('base64'), '>');
+    const trustedCert = config.mqtt.client.caTrusted;
+    console.log('ClientSessionInternal:verifyCertChain:trustedCert=<', trustedCert.toString('base64'), '>');
+    return false; // Placeholder for actual certificate chain verification logic
   }
 }

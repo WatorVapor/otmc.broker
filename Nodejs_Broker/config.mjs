@@ -1,12 +1,19 @@
 import * as fs from "fs";
 import * as path from "path";
-const caCert = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-root.crt"));
-const clientCert = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.crt"));
-const clientKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.key"));
+const caCertValKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-root.crt"));
+const clientCertValKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.crt"));
+const clientKeyValKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valkey-cluster/valkey-client.key"));
+const caRootMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/client-root.crt"));
+const caTrustedMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/ca_inter_bundle.crt"));
+
 const config = {
   mqtt: {
     host: '2404:7a82:1be9:3f00:96c6:91ff:fea6:7bd0',
     port: 18883,
+    client: {
+      caRoot: caRootMqttClient,
+      caTrusted: caTrustedMqttClient,
+    }
   },
   valkey: {
     address: [
@@ -30,9 +37,9 @@ const config = {
         insecure: true,
         verify_hostname: false, 
         verifyPeer: false,
-        rootCertificates: caCert,
-        cert: clientCert,
-        key: clientKey,
+        rootCertificates: caCertValKey,
+        cert: clientCertValKey,
+        key: clientKeyValKey,
       }
     }
   },
@@ -45,9 +52,9 @@ const config = {
     defaults: {
         socket: {
             tls: true,                // 启用 TLS
-            ca: caCert,               // CA 证书
-            cert: clientCert,         // 客户端证书（mTLS）
-            key: clientKey,           // 客户端私钥（mTLS）
+            ca: caCertValKey,               // CA 证书
+            cert: clientCertValKey,         // 客户端证书（mTLS）
+            key: clientKeyValKey,           // 客户端私钥（mTLS）
             rejectUnauthorized: false // ⚠️ 仅用于测试：跳过证书验证
         }
     }
