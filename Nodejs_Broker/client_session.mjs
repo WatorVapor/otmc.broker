@@ -189,6 +189,7 @@ class ClientSessionInternal {
   }
 
   verifyCertChain(clientCert) {
+    console.log('ClientSessionInternal:verifyCertChain:clientCert=<', clientCert, '>');
     const rootCert = config.mqtt.client.caRoot;
     console.log('ClientSessionInternal:verifyCertChain:rootCert=<', rootCert.toString('base64'), '>');
     const trustedCert = config.mqtt.client.caTrusted;
