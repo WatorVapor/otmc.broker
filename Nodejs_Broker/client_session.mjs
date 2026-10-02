@@ -289,6 +289,7 @@ class ClientSessionInternal {
         console.log('ClientSessionInternal:verifyCertChain:clientCert is empty or invalid');
         return false;
       }
+      console.log('ClientSessionInternal:verifyCertChain:certPem=<', certPem, '>');
 
       const rootCert = config?.mqtt?.client?.caRoot;
       const trustedCert = config?.mqtt?.client?.caTrusted;
