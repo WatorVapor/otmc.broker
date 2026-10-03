@@ -1,10 +1,6 @@
 import mqttPacket from 'mqtt-packet';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { config } from './config.mjs';
+import { ClientCertificate } from './client_certificate_.mjs';
 
 const gClients = new Map();
 const pendingChallenges = new Map();
@@ -148,7 +144,9 @@ class ClientSessionInternal {
 
     console.log('ClientSessionInternal:handleAuth:clientCert=<', clientCert, '>');
 
-    const isValid = this.verifyCertChain(clientCert);
+    const cltCert = new ClientCertificate(clientCert);
+
+    const isValid = cltCert.isValid();
     console.log('ClientSessionInternal:handleAuth:isValid=<', isValid, '>');
 
     if (!isValid) {
@@ -156,6 +154,8 @@ class ClientSessionInternal {
       this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
       return;
     }
+    const pubKeyHash = cltCert.getPublicKeyHash();
+    console.log('ClientSessionInternal:handleAuth:pubKeyHash=<', pubKeyHash, '>');
 
     this.sendConnack(socket, MQTT_5_REASON_CODE_SUCCESS, false);
   }
@@ -231,113 +231,5 @@ class ClientSessionInternal {
 
   hasSubscription(topic) {
     return this.subscriptions.has(topic);
-  }
-
-  normalizeCertPem(rawCert) {
-    if (!rawCert) return null;
-
-    if (typeof rawCert === 'string') {
-      const trimmed = rawCert.trim();
-      if (!trimmed) return null;
-
-      if (trimmed.includes('BEGIN CERTIFICATE')) {
-        return trimmed;
-      }
-
-      try {
-        const parsed = JSON.parse(trimmed);
-        return this.normalizeCertPem(parsed);
-      } catch {
-        // ignore
-      }
-
-      const sanitized = trimmed
-        .replace(/-----BEGIN CERTIFICATE-----/g, '')
-        .replace(/-----END CERTIFICATE-----/g, '')
-        .replace(/\s+/g, '');
-
-      if (/^[A-Za-z0-9+/=]+$/.test(sanitized) && sanitized.length > 128) {
-        const wrapped = sanitized.match(/.{1,64}/g).join('\n');
-        return `-----BEGIN CERTIFICATE-----\n${wrapped}\n-----END CERTIFICATE-----\n`;
-      }
-
-      return null;
-    }
-
-    if (Array.isArray(rawCert)) {
-      const pemList = rawCert
-        .map((item) => this.normalizeCertPem(item))
-        .filter(Boolean);
-
-      return pemList.length > 0 ? pemList.join('\n') : null;
-    }
-
-    if (typeof rawCert === 'object') {
-      if (typeof rawCert.cert === 'string') return this.normalizeCertPem(rawCert.cert);
-      if (typeof rawCert.certificate === 'string') return this.normalizeCertPem(rawCert.certificate);
-      if (Array.isArray(rawCert.certChain)) return this.normalizeCertPem(rawCert.certChain);
-      if (Array.isArray(rawCert.chain)) return this.normalizeCertPem(rawCert.chain);
-    }
-
-    return null;
-  }
-
-  verifyCertChain(clientCert) {
-    try {
-      const certPem = this.normalizeCertPem(clientCert);
-      if (!certPem) {
-        console.log('ClientSessionInternal:verifyCertChain:clientCert is empty or invalid');
-        return false;
-      }
-      console.log('ClientSessionInternal:verifyCertChain:certPem=<', certPem, '>');
-
-      const rootCert = config?.mqtt?.client?.caRoot;
-      const trustedCert = config?.mqtt?.client?.caTrusted;
-      if (!rootCert || !trustedCert) {
-        console.log('ClientSessionInternal:verifyCertChain:missing CA configuration');
-        return false;
-      }
-
-      const rootBuf = Buffer.isBuffer(rootCert) ? rootCert : Buffer.from(String(rootCert));
-      const trustedBuf = Buffer.isBuffer(trustedCert) ? trustedCert : Buffer.from(String(trustedCert));
-
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mqtt-cert-'));
-      const clientCertPath = path.join(tempDir, 'client.crt');
-      const rootCertPath = path.join(tempDir, 'root-ca.crt');
-      const trustedCertPath = path.join(tempDir, 'trusted-ca.pem');
-
-      fs.writeFileSync(clientCertPath, certPem);
-      fs.writeFileSync(rootCertPath, rootBuf);
-      fs.writeFileSync(trustedCertPath, trustedBuf);
-
-      try {
-        execFileSync(
-          'openssl',
-          [
-            'verify',
-            '-verbose',
-            '-purpose',
-            'sslclient',
-            '-CAfile',
-            rootCertPath,
-            '-untrusted',
-            trustedCertPath,
-            clientCertPath
-          ],
-          { stdio: 'pipe' }
-        );
-      } catch (error) {
-        const stderr = error?.stderr ? error.stderr.toString() : error.message;
-        console.log('ClientSessionInternal:verifyCertChain:openssl verify failed:', stderr);
-        return false;
-      } finally {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      }
-
-      return true;
-    } catch (error) {
-      console.error('ClientSessionInternal:verifyCertChain:error=', error);
-      return false;
-    }
   }
 }
