@@ -161,15 +161,15 @@ class ClientSessionInternal {
   }
 
   sendConnack(socket, reasonCode, endSocket) {
-    const responsePacketObj = {
+    const connackPacketObj = {
       cmd: 'connack',
       reasonCode,
       sessionPresent: false,
       properties: {}
     };
-    const conPacket = mqttPacket.generate(responsePacketObj, MQTT_5_OPTION);
-    console.log('ClientSessionInternal:sendConnack:conPacket=<', conPacket, '>');
-    socket.write(conPacket);
+    const connackPacket = mqttPacket.generate(connackPacketObj, MQTT_5_OPTION);
+    console.log('ClientSessionInternal:sendConnack:connackPacket=<', connackPacket, '>');
+    socket.write(connackPacket);
     if (endSocket) {
       socket.end();
     }

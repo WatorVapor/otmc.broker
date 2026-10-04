@@ -1,7 +1,7 @@
-const mqtt = require('mqtt');
-const fs = require('fs');
-const { timeStamp } = require('console');
-const crypto = require('crypto');
+import mqtt from 'mqtt';
+import fs from 'fs';
+import crypto from 'node:crypto';
+import bs58 from 'bs58';
 
 const ACL_REQUEST = {
   read: ['secure/topic'], 
@@ -82,13 +82,27 @@ const handleAuth = (packet, callback,key,cert) => {
   signature.update(JSON.stringify(challengeMsg));
   signature.end();
   const signedChallenge = signature.sign(key, 'base64');
+  
 
+  // 从私钥生成公钥
+  const privateKey = crypto.createPrivateKey({
+    key: key,
+    format: 'pem'
+  });
+
+  const publicKey = crypto.createPublicKey(privateKey);
+  console.log('connectWithMTLS:handleAuth:publicKey=<', publicKey.export({ type: 'spki', format: 'pem' }), '>');
+  const pubKeyDer = publicKey.export({ type: 'spki', format: 'der' });
+  const hash = crypto.createHash('sha256').update(pubKeyDer).digest('hex');
+  const base58Hash = bs58.encode(Buffer.from(hash, 'hex'));
+  console.log('connectWithMTLS:handleAuth:base58Hash=<',base58Hash,'>');  
   const challengedMsg = {
     "type": "client_auth",
     "challenges": [
       {
         "challenge": challengeMsg,
         "signature": signedChallenge,
+        "keyAddress": base58Hash
       }
     ],
     "cert": cert.toString()
