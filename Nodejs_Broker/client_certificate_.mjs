@@ -13,6 +13,9 @@ class ClientCertificate {
   getPublicKeyHash() {
     return this.internal.getPublicKeyHash();
   }
+  verifySignature(challenges) {
+    return this.internal.verifySignature(challenges);
+  }
 }
 
 export { ClientCertificate };
@@ -22,6 +25,7 @@ class ClientCertificateInternal {
     this.clientCert = clientCert;
     this.fullChainPem = [];
     this.fullChain = [];
+    this.fullChainMap = {}; // keyAddresses 
     this.trustedRootFingerprints = new Set(); // 允许配置多个 root
   }
 
@@ -159,6 +163,34 @@ class ClientCertificateInternal {
 
     return true;
   }
+  verifySignature(challenges) {
+    if (this.fullChain.length === 0) {
+      console.error('verifySignature:chain is empty');
+      return false;
+    }
+    for(const challenge of challenges) {
+      console.log('verifySignature:challenge:=<', challenge,'>');
+      const isValid = this.verifySignatureSingle(challenge.data, challenge.signature, challenge.algorithm, this.fullChainMap[challenge.keyAddress]);
+      if (!isValid) {
+        console.error('verifySignature:challenge invalid for keyAddress=<', challenge.keyAddress, '>');
+        continue; // 继续验证下一个 challenge
+      }
+    }
+  }
+  verifySignatureSingle(data, signature, algorithm, cert) {
+    const signatureBin = Buffer.from(signature, 'base64');
+    const dataBin = Buffer.from(data ? JSON.stringify(data) : '');
+    const pubKeyDer = cert.publicKey.export({ type: 'spki', format: 'der' });
+    const verify = crypto.createVerify(algorithm);
+    verify.update(dataBin);
+    verify.end();
+    const isValid = verify.verify(pubKeyDer, signatureBin);
+    if (!isValid) {
+      return false;
+    }
+  }
+
+
   getPublicKeyHash() {
     if (this.fullChain.length === 0) {
       console.error('getPublicKeyHash:chain is empty');
@@ -170,6 +202,7 @@ class ClientCertificateInternal {
       const hash = crypto.createHash('sha256').update(pubKeyDer).digest('hex');
       const base58Hash = bs58.encode(Buffer.from(hash, 'hex'));
       allHashes.push(base58Hash);
+      this.fullChainMap[base58Hash] = cert; // 将公钥哈希映射到证书
     }
     console.log('getPublicKeyHash:allHashes=<', allHashes, '>');
     return allHashes;

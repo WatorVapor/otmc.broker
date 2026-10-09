@@ -135,6 +135,7 @@ class ClientSessionInternal {
       this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
       return;
     }
+    console.log('ClientSessionInternal:handleAuth:authDataJson=<', authDataJson, '>');
 
     const clientCert =
       authDataJson.cert ||
@@ -154,8 +155,19 @@ class ClientSessionInternal {
       this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
       return;
     }
+
     const pubKeyHash = cltCert.getPublicKeyHash();
     console.log('ClientSessionInternal:handleAuth:pubKeyHash=<', pubKeyHash, '>');
+
+
+    const signedHash = cltCert.verifySignature(authDataJson.challenges);
+    console.log('ClientSessionInternal:handleAuth:signedHash=<', signedHash, '>');
+    if (signedHash.length === 0) {
+      console.log('ClientSessionInternal:handleAuth:Signature verification failed');
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      return;
+    }
+
 
     this.sendConnack(socket, MQTT_5_REASON_CODE_SUCCESS, false);
   }

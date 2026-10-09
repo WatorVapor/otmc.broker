@@ -102,6 +102,7 @@ const handleAuth = (packet, callback,key,cert) => {
       {
         "challenge": challengeMsg,
         "signature": signedChallenge,
+        "algorithm": "SHA256",
         "keyAddress": base58Hash
       }
     ],
