@@ -1,9 +1,8 @@
 import mqttPacket from 'mqtt-packet';
 import crypto from 'node:crypto';
 import { ClientCertificate } from './client_certificate_.mjs';
+import { ClientCollector } from './client_collect.mjs';
 
-const gClients = new Map();
-const pendingChallenges = new Map();
 
 const MQTT_5_OPTION = {
   protocolVersion: 5
@@ -67,29 +66,31 @@ export { ClientSession, gClients };
 class ClientSessionInternal {
   constructor() {
     this.subscriptions = new Set();
+    this.collect = new ClientCollector();
   }
 
   handleConnect(socket, packet, client) {
     console.log('ClientSessionInternal:handleConnect:packet=<', packet, '>');
-    const clientId = packet.clientId || `client_${Math.random().toString(16).substring(2, 10)}`;
-    socket.clientId = clientId;
-    gClients.set(clientId, client);
+    const clientId = packet.clientId || `client_${crypto.randomBytes(32).toString('base64')}`;
     console.log('ClientSessionInternal:handleConnect:clientId=<', clientId, '>');
+    socket.clientId = clientId;
+    this.collect.addClient(clientId, client);
+
 
     if (packet && packet.properties && packet.properties.userProperties) {
       console.log('ClientSessionInternal:handleConnect:packet.properties.userProperties=<', packet.properties.userProperties, '>');
     }
 
-    const challenge = crypto.randomBytes(32);
-    pendingChallenges.set(clientId, challenge);
-    console.log('ClientSessionInternal:handleConnect:challenge=<', challenge.toString('base64'), '>');
+    const challenge = crypto.randomBytes(32).toString('base64');
+    console.log('ClientSessionInternal:handleConnect:challenge=<', challenge, '>');
+    this.collect.addChallenge(clientId, challenge);
 
     const responsePacketObj = {
       cmd: 'auth',
       reasonCode: MQTT_5_REASON_CODE_CONTINUE_AUTH,
       properties: {
         authenticationMethod: 'certchain',
-        authenticationData: challenge.toString('base64')
+        authenticationData: challenge
       }
     };
 
@@ -209,7 +210,7 @@ class ClientSessionInternal {
     const { topic, payload } = packet;
     console.log(`[Publish] 来自 ${socket.clientId} -> 主题 [${topic}]: ${payload.toString()}`);
 
-    gClients.forEach((client, clientId) => {
+    this.collect.getAllClients().forEach((client, clientId) => {
       if (client.internal.hasSubscription(topic)) {
         const pubPacket = mqttPacket.generate({
           cmd: 'publish',

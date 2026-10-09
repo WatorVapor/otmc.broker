@@ -177,18 +177,24 @@ class ClientCertificateInternal {
       }
     }
   }
-  verifySignatureSingle(data, signature, algorithm, cert) {
-    const signatureBin = Buffer.from(signature, 'base64');
-    const dataBin = Buffer.from(data ? JSON.stringify(data) : '');
-    const pubKeyDer = cert.publicKey.export({ type: 'spki', format: 'der' });
-    const verify = crypto.createVerify(algorithm);
-    verify.update(dataBin);
-    verify.end();
-    const isValid = verify.verify(pubKeyDer, signatureBin);
-    if (!isValid) {
+
+  verifySignatureSingle(dataJson, signatureB64, algorithm, cert) {
+    if (!cert) {
+      console.error('verifySignatureSingle: cert not found');
       return false;
     }
+
+    const signature = Buffer.from(signatureB64, 'base64');
+    const data = Buffer.from(JSON.stringify(dataJson) , 'utf8');
+
+    const verify = crypto.createVerify(String(algorithm || 'sha256').toLowerCase());
+    verify.update(data);
+    verify.end();
+    const result = verify.verify(cert.publicKey, signature);
+    console.log('verifySignatureSingle:result=<', result, '>');
+    return result;
   }
+
 
 
   getPublicKeyHash() {

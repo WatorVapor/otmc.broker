@@ -100,7 +100,7 @@ const handleAuth = (packet, callback,key,cert) => {
     "type": "client_auth",
     "challenges": [
       {
-        "challenge": challengeMsg,
+        "data": challengeMsg,
         "signature": signedChallenge,
         "algorithm": "SHA256",
         "keyAddress": base58Hash
