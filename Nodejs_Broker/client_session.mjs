@@ -58,6 +58,8 @@ class ClientSession {
 
   delete(clientId) {
     this.internal.collect.removeClient(clientId);
+    this.internal.collect.removeChallenge(clientId);
+    this.internal.acl.removeAcl(clientId);
   }
 }
 
