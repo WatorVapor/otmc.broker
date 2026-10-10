@@ -45,8 +45,12 @@ class ClientCollector {
     return gClients.has(clientId);
   }
 
-  hasChallenge(clientId) {
-    return pendingChallenges.has(clientId);
+  hasChallenge(clientId, challenge) {
+    console.log('ClientCollector:hasChallenge:pendingChallenges=<', pendingChallenges, '>');
+    console.log('ClientCollector:hasChallenge:clientId=<', clientId, '>, challenge=<', challenge, '>');
+    const pendingChallenge = pendingChallenges.get(clientId);
+    console.log('ClientCollector:hasChallenge:pendingChallenge=<', pendingChallenge, '>');
+    return pendingChallenge && pendingChallenge === challenge;
   }
 
   getClientCount() {

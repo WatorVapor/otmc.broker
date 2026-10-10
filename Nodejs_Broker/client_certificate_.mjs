@@ -1,11 +1,14 @@
 import crypto from 'node:crypto';
 import { config } from './config.mjs';
 import bs58 from 'bs58';
+import { ClientCollector } from './client_collect.mjs';
 
+
+const MAX_TIME_DIFF_MS = 1 * 60 * 1000; // 1 minute in milliseconds
 
 class ClientCertificate {
-  constructor(clientCert) {
-    this.internal = new ClientCertificateInternal(clientCert);
+  constructor(clientCert,clientId) {
+    this.internal = new ClientCertificateInternal(clientCert,clientId);
   }
   isValid() {
     return this.internal.isValid();
@@ -21,12 +24,14 @@ class ClientCertificate {
 export { ClientCertificate };
 
 class ClientCertificateInternal {
-  constructor(clientCert) {
+  constructor(clientCert, clientId) {
     this.clientCert = clientCert;
+    this.clientId = clientId;
     this.fullChainPem = [];
     this.fullChain = [];
     this.fullChainMap = {}; // keyAddresses 
     this.trustedRootFingerprints = new Set(); // 允许配置多个 root
+    this.collect = new ClientCollector();
   }
 
   isValid() {
@@ -168,6 +173,7 @@ class ClientCertificateInternal {
       console.error('verifySignature:chain is empty');
       return false;
     }
+    const verifiedKeyAddresses = new Set();
     for(const challenge of challenges) {
       console.log('verifySignature:challenge:=<', challenge,'>');
       const isValid = this.verifySignatureSingle(challenge.data, challenge.signature, challenge.algorithm, this.fullChainMap[challenge.keyAddress]);
@@ -175,7 +181,9 @@ class ClientCertificateInternal {
         console.error('verifySignature:challenge invalid for keyAddress=<', challenge.keyAddress, '>');
         continue; // 继续验证下一个 challenge
       }
+      verifiedKeyAddresses.add(challenge.keyAddress);
     }
+    return verifiedKeyAddresses;
   }
 
   verifySignatureSingle(dataJson, signatureB64, algorithm, cert) {
@@ -183,6 +191,24 @@ class ClientCertificateInternal {
       console.error('verifySignatureSingle: cert not found');
       return false;
     }
+    console.log('verifySignatureSingle:dataJson=<', dataJson, '>');
+    const ischallengeValid = this.collect.hasChallenge(this.clientId, dataJson.challenge);
+    console.log('verifySignatureSingle:ischallengeValid=<', ischallengeValid, '>');
+    if (!ischallengeValid) {
+      console.error('verifySignatureSingle: challenge not found or does not match for clientId=<', this.clientId, '>');
+      return false;
+    }
+    const signedTimestamp = new Date(dataJson.timeStamp);
+    console.log('verifySignatureSingle:signedTimestamp=<', signedTimestamp, '>');
+    const now = new Date();
+    console.log('verifySignatureSingle:now=<', now, '>');
+    const timeDiff = Math.abs(now - signedTimestamp);
+    const maxTimeDiff = MAX_TIME_DIFF_MS;
+    if (timeDiff > maxTimeDiff || typeof timeDiff !== 'number' || isNaN(timeDiff)) {
+      console.error('verifySignatureSingle: timestamp is too old or too far in the future');
+      return false;
+    }
+    console.log('verifySignatureSingle:timestamp is valid, timeDiff=<', timeDiff, 'ms>');
 
     const signature = Buffer.from(signatureB64, 'base64');
     const data = Buffer.from(JSON.stringify(dataJson) , 'utf8');

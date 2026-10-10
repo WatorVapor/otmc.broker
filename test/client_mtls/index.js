@@ -3,12 +3,6 @@ import fs from 'fs';
 import crypto from 'node:crypto';
 import bs58 from 'bs58';
 
-const ACL_REQUEST = {
-  read: ['secure/topic'], 
-  write: ['secure/topic'],
-  all:[]
-};
-
 const connectWithMTLS = () => {
   let ca, cert, key;
   try {
@@ -30,17 +24,20 @@ const connectWithMTLS = () => {
     properties: {
       authenticationMethod:'certchain',
       authenticationData:cert,
-      userProperties: {
-        acl: JSON.stringify(ACL_REQUEST)
-      },
     },
     debug: true,
   };
 
   const client = mqtt.connect('mqtts://mqtt-broker-local10001.wator.xyz:8883', options);
 
-  client.on('connect', () => {
+  client.on('connect', (connack) => {
     console.log('✅ 已连接（TLS 客户端证书认证）');
+    // console.log('connack=<', connack, '>');
+    // console.log('connack.properties=<', connack.properties, '>');
+    const acl = connack.properties?.userProperties?.acl;
+    // console.log('connack.properties.userProperties.acl=<', acl, '>');
+    const parsedAcl = acl ? JSON.parse(acl) : null;
+    console.log('parsedAcl=<', parsedAcl, '>');
     client.subscribe('secure/topic', (err) => {
       if (!err) {
         client.publish('secure/topic', 'Hello mqtt with mTLS');

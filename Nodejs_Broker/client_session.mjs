@@ -2,7 +2,7 @@ import mqttPacket from 'mqtt-packet';
 import crypto from 'node:crypto';
 import { ClientCertificate } from './client_certificate_.mjs';
 import { ClientCollector } from './client_collect.mjs';
-
+import { ClientAcl } from './client_acl.mjs';
 
 const MQTT_5_OPTION = {
   protocolVersion: 5
@@ -43,7 +43,7 @@ class ClientSession {
         socket.end();
         break;
       default:
-        console.log('未处理的包类型:', packet.cmd);
+        console.log('未处理的包类型packet.cmd:=<', packet.cmd, '>');
     }
   }
 
@@ -57,11 +57,11 @@ class ClientSession {
   }
 
   delete(clientId) {
-    gClients.delete(clientId);
+    this.internal.collect.removeClient(clientId);
   }
 }
 
-export { ClientSession, gClients };
+export { ClientSession };
 
 class ClientSessionInternal {
   constructor() {
@@ -71,10 +71,11 @@ class ClientSessionInternal {
 
   handleConnect(socket, packet, client) {
     console.log('ClientSessionInternal:handleConnect:packet=<', packet, '>');
-    const clientId = packet.clientId || `client_${crypto.randomBytes(32).toString('base64')}`;
-    console.log('ClientSessionInternal:handleConnect:clientId=<', clientId, '>');
-    socket.clientId = clientId;
-    this.collect.addClient(clientId, client);
+    const fromClientId = packet.clientId || `client_${crypto.randomBytes(32).toString('base64')}`;
+    const clientIdBroker = `${fromClientId}_broker_${crypto.randomBytes(8).toString('base64')}`;
+    console.log('ClientSessionInternal:handleConnect:clientId=<', clientIdBroker, '>');
+    socket.clientId = clientIdBroker;
+    this.collect.addClient(clientIdBroker, client);
 
 
     if (packet && packet.properties && packet.properties.userProperties) {
@@ -83,7 +84,7 @@ class ClientSessionInternal {
 
     const challenge = crypto.randomBytes(32).toString('base64');
     console.log('ClientSessionInternal:handleConnect:challenge=<', challenge, '>');
-    this.collect.addChallenge(clientId, challenge);
+    this.collect.addChallenge(clientIdBroker, challenge);
 
     const responsePacketObj = {
       cmd: 'auth',
@@ -106,14 +107,14 @@ class ClientSessionInternal {
     const props = packet.properties || {};
     if (props.authenticationMethod !== 'certchain') {
       console.log('ClientSessionInternal:handleAuth:unsupported authenticationMethod:', props.authenticationMethod);
-      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED);
       return;
     }
 
     const rawAuthData = props.authenticationData;
     if (!rawAuthData) {
       console.log('ClientSessionInternal:handleAuth:missing authenticationData');
-      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED);
       return;
     }
 
@@ -133,7 +134,7 @@ class ClientSessionInternal {
       authDataJson = JSON.parse(authDataStr);
     } catch (error) {
       console.log('ClientSessionInternal:handleAuth:invalid authData JSON:', error.message);
-      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED);
       return;
     }
     console.log('ClientSessionInternal:handleAuth:authDataJson=<', authDataJson, '>');
@@ -146,14 +147,14 @@ class ClientSessionInternal {
 
     console.log('ClientSessionInternal:handleAuth:clientCert=<', clientCert, '>');
 
-    const cltCert = new ClientCertificate(clientCert);
+    const cltCert = new ClientCertificate(clientCert,socket.clientId);
 
     const isValid = cltCert.isValid();
     console.log('ClientSessionInternal:handleAuth:isValid=<', isValid, '>');
 
     if (!isValid) {
       console.log('ClientSessionInternal:handleAuth:Invalid certificate chain');
-      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED);
       return;
     }
 
@@ -161,25 +162,33 @@ class ClientSessionInternal {
     console.log('ClientSessionInternal:handleAuth:pubKeyHash=<', pubKeyHash, '>');
 
 
-    const signedHash = cltCert.verifySignature(authDataJson.challenges);
-    console.log('ClientSessionInternal:handleAuth:signedHash=<', signedHash, '>');
-    if (signedHash.length === 0) {
+    const challengeHash = cltCert.verifySignature(authDataJson.challenges);
+    console.log('ClientSessionInternal:handleAuth:challengeHash=<', challengeHash, '>');
+    if (challengeHash.length === 0) {
       console.log('ClientSessionInternal:handleAuth:Signature verification failed');
-      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED, true);
+      this.sendConnack(socket, MQTT_5_REASON_CODE_NOT_AUTHORIZED);
       return;
     }
-
-
-    this.sendConnack(socket, MQTT_5_REASON_CODE_SUCCESS, false);
+    const aclConfig = getAclConfig(pubKeyHash,challengeHash);
+    const properties = {
+      userProperties: {
+        acl: JSON.stringify(aclConfig)
+      }
+    };
+    this.acl = new ClientAcl();
+    this.acl.addAcl(socket.clientId, aclConfig);
+    console.log('ClientSessionInternal:handleAuth:properties=<', properties, '>');
+    this.sendConnack(socket, MQTT_5_REASON_CODE_SUCCESS, properties, false);
   }
 
-  sendConnack(socket, reasonCode, endSocket) {
+  sendConnack(socket, reasonCode,properties = {}, endSocket = true) {
     const connackPacketObj = {
       cmd: 'connack',
       reasonCode,
       sessionPresent: false,
-      properties: {}
+      properties: properties
     };
+    console.log('ClientSessionInternal:sendConnack:connackPacketObj=<', connackPacketObj, '>');
     const connackPacket = mqttPacket.generate(connackPacketObj, MQTT_5_OPTION);
     console.log('ClientSessionInternal:sendConnack:connackPacket=<', connackPacket, '>');
     socket.write(connackPacket);
@@ -246,3 +255,33 @@ class ClientSessionInternal {
     return this.subscriptions.has(topic);
   }
 }
+
+
+const getAclConfig = (pubKeyHash,challengeHash) => {
+  console.log('ClientSessionInternal:getAclConfig:pubKeyHash=<', pubKeyHash, '>, challengeHash=<', challengeHash, '>');
+  if (!pubKeyHash || !challengeHash) {
+    console.log('ClientSessionInternal:getAclConfig:pubKeyHash or challengeHash is missing');
+    return [];
+  }
+  const last3PublicKeyHash = pubKeyHash.slice(-3);
+  console.log('ClientSessionInternal:getAclConfig:last3PublicKeyHash=<', last3PublicKeyHash, '>');
+
+  const aclConfig = []
+  const separator = '/';
+  let current = '';
+  for(const hash of last3PublicKeyHash) {
+    current = current ? `${current}${separator}${hash}` : hash;
+    const aclEntry = {
+      topic: `${current}/#`,
+      action: 'read'
+    };
+    if(challengeHash.has(hash)) {
+      aclEntry.action = 'all';
+    }
+    console.log('ClientSessionInternal:getAclConfig:aclEntry=<', aclEntry, '>');
+    aclConfig.push(aclEntry);
+  }
+  console.log('ClientSessionInternal:getAclConfig:aclConfig=<', aclConfig, '>');
+  return aclConfig;
+};
+

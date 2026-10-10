@@ -1,6 +1,6 @@
 import { createCluster } from 'redis';
 import { config } from './config.mjs';
-import { gClients } from './client_session.mjs';
+import { ClientCollector } from './client_collect.mjs';
 import fs from 'fs';
 import { createHash, X509Certificate } from 'crypto';
 
@@ -22,7 +22,8 @@ class RedisConfig {
   constructor() {
     this.valkeyConfig = config.valkey;
     this.redisConfig = config.redis;
-    this.clientCounter = gClients.size;
+    this.collect = new ClientCollector();
+    this.clientCounter = this.collect.getClientCount();
     const { publicKeySha256Base58, publicKey } = sha256PublicKey();
     this.nodeId = publicKeySha256Base58;
     this.publicKey = publicKey;
@@ -77,7 +78,7 @@ class RedisConfig {
       EX: KEY_STORE_ENDPOINT_TTL_SECONDS
     };
     const newEndpoint2 = Object.assign({}, newEndpoint);
-    newEndpoint2.clientCounter = gClients.size;
+    newEndpoint2.clientCounter = this.collect.getClientCount();
     newEndpoint2.publicKey = this.publicKey;
     newEndpoint2.nonce = this.nonce;
     const endpointKey = `${KEY_STORE_ENDPOINT_KEY}:${this.nodeId}`;
