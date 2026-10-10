@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { ClientCertificate } from './client_certificate_.mjs';
 import { ClientCollector } from './client_collect.mjs';
 import { ClientAcl } from './client_acl.mjs';
+import { ClientTopic } from './client_topics.mjs';
 
 const MQTT_5_OPTION = {
   protocolVersion: 5
@@ -10,6 +11,7 @@ const MQTT_5_OPTION = {
 const MQTT_5_REASON_CODE_CONTINUE_AUTH = 0x18;
 const MQTT_5_REASON_CODE_SUCCESS = 0x00;
 const MQTT_5_REASON_CODE_NOT_AUTHORIZED = 0x87;
+const MQTT_5_GRANTED_CODE_NOT_AUTHORIZED = 0x87;
 
 class ClientSession {
   constructor(socket) {
@@ -67,8 +69,8 @@ export { ClientSession };
 
 class ClientSessionInternal {
   constructor() {
-    this.subscriptions = new Set();
     this.collect = new ClientCollector();
+    this.topics = new ClientTopic();
   }
 
   handleConnect(socket, packet, client) {
@@ -203,10 +205,36 @@ class ClientSessionInternal {
     const granted = [];
 
     packet.subscriptions.forEach((sub) => {
-      this.addSubscription(sub.topic);
-      granted.push(sub.qos || 0);
-      console.log(`[Subscribe] ${socket.clientId} 订阅了: ${sub.topic}`);
+      console.log('ClientSessionInternal:handleSubscribe:sub=<', sub, '>');
+      const allowed = [];
+      this.acl.getAcl(socket.clientId).forEach((aclEntry) => {
+        console.log('ClientSessionInternal:handleSubscribe:aclEntry=<', aclEntry, '>');
+        if (aclEntry.action === 'all' || aclEntry.action === 'read') {
+          allowed.push(aclEntry.topic);
+        }
+      });
+      console.log('ClientSessionInternal:handleSubscribe:allowed=<', allowed, '>');
+
+      let grantedQos = null;
+      for (const allowedTopic of allowed) {
+        if (matchTopic(sub.topic, allowedTopic)) {
+          grantedQos = sub.qos || 0;
+          console.log(`[Subscribe] ${socket.clientId} 订阅了: ${sub.topic}`);
+          this.topics.addSubscription(sub.topic);
+          break;
+        }
+      }
+
+      if (grantedQos !== null) {
+        granted.push(grantedQos);
+      } else {
+        // 被拒绝：每个订阅都必须有一个返回码
+        granted.push( MQTT_5_GRANTED_CODE_NOT_AUTHORIZED);
+        console.log(`[Subscribe] ${socket.clientId} 被拒绝订阅: ${sub.topic}`);
+      }
     });
+
+    console.log('ClientSessionInternal:handleSubscribe:granted=<', granted, '>');
 
     const subackPacket = mqttPacket.generate({
       cmd: 'suback',
@@ -245,17 +273,8 @@ class ClientSessionInternal {
     socket.write(pingrespPacket);
   }
 
-  addSubscription(topic) {
-    this.subscriptions.add(topic);
-  }
 
-  removeSubscription(topic) {
-    this.subscriptions.delete(topic);
-  }
 
-  hasSubscription(topic) {
-    return this.subscriptions.has(topic);
-  }
 }
 
 
@@ -287,3 +306,21 @@ const getAclConfig = (pubKeyHash,challengeHash) => {
   return aclConfig;
 };
 
+const matchTopic = (topic, aclTopic) => {
+  const topicLevels = topic.split('/');
+  const aclLevels = aclTopic.split('/');
+
+  for (let i = 0; i < aclLevels.length; i++) {
+    if (aclLevels[i] === '#') {
+      return true;
+    }
+    if (aclLevels[i] === '+') {
+      continue;
+    }
+    if (topicLevels[i] !== aclLevels[i]) {
+      return false;
+    }
+  }
+
+  return topicLevels.length === aclLevels.length;
+};
