@@ -306,9 +306,28 @@ class ClientSessionInternal {
   
   forwardMessage(topic, payload) {
     console.log(`[Forward] 转发消息到主题: ${topic}, 负载: ${payload.toString()}`);
-    const subscriptions = this.topics.getSubscriptions();
-    console.log('ClientSessionInternal:forwardMessage:subscriptions=<', subscriptions, '>');
-
+    const clientIds = this.topics.getSubscriptions(topic);
+    console.log('ClientSessionInternal:forwardMessage:clientIds=<', clientIds, '>');
+    for(const targetClientId of clientIds) {
+      const targetClient = this.collect.getClient(targetClientId);
+      console.log('ClientSessionInternal:forwardMessage:targetClient=<', targetClient, '>');
+      if(!targetClient || !targetClient.socket) {
+        console.log(`[Error] 无法找到客户端 ${clientId} 的连接`);
+        continue;
+      }
+      const forwardMsg = {
+        cmd: 'publish',
+        topic,
+        payload,
+        qos: 0,
+        retain: false,
+        dup: false
+      };
+      console.log('ClientSessionInternal:forwardMessage:forwardMsg=<', forwardMsg, '>');
+      const pubPacket = mqttPacket.generate(forwardMsg, MQTT_5_OPTION);
+      targetClient.socket.write(pubPacket);
+      console.log(`└─> 转发给: ${targetClientId}`);
+    }
   }
 
 

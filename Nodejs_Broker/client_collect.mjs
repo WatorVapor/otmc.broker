@@ -13,6 +13,9 @@ class ClientCollector {
   }
 
   getClient(clientId) {
+    console.log('ClientCollector:getClient:clientId=<', clientId, '>');
+    //console.log('ClientCollector:getClient:gClients=<', gClients, '>'); 
+    //console.log('ClientCollector:getClient:client=<', gClients.get(clientId), '>');
     return gClients.get(clientId);
   }
 
