@@ -220,7 +220,7 @@ class ClientSessionInternal {
         if (matchTopic(sub.topic, allowedTopic)) {
           grantedQos = sub.qos || 0;
           console.log(`[Subscribe] ${socket.clientId} 订阅了: ${sub.topic}`);
-          this.topics.addSubscription(sub.topic);
+          this.topics.addSubscription(sub.topic,socket.clientId);
           break;
         }
       }
@@ -245,26 +245,72 @@ class ClientSessionInternal {
     socket.write(subackPacket);
   }
 
+
   handlePublish(socket, packet) {
-    const { topic, payload } = packet;
-    console.log(`[Publish] 来自 ${socket.clientId} -> 主题 [${topic}]: ${payload.toString()}`);
+    const { topic, payload, qos, messageId } = packet;
+    console.log(`[Publish] 来自 ${socket.clientId} -> 主题 [${topic}] qos=${qos} mid=${messageId}: ${payload.toString()}`);
 
-    this.collect.getAllClients().forEach((client, clientId) => {
-      if (client.internal.hasSubscription(topic)) {
-        const pubPacket = mqttPacket.generate({
-          cmd: 'publish',
-          topic,
-          payload,
-          qos: 0,
-          retain: false,
-          dup: false
-        }, MQTT_5_OPTION);
-
-        client.socket.write(pubPacket);
-        console.log(`  └─> 转发给: ${clientId}`);
+    const allowed = [];
+    this.acl.getAcl(socket.clientId).forEach((aclEntry) => {
+      console.log('ClientSessionInternal:handlePublish:aclEntry=<', aclEntry, '>');
+      if (aclEntry.action === 'all' || aclEntry.action === 'write') {
+        allowed.push(aclEntry.topic);
       }
     });
+    console.log('ClientSessionInternal:handlePublish:allowed=<', allowed, '>');
+
+    // 授权判定
+    let ok = false;
+    for (const allowedTopic of allowed) {
+      if (matchTopic(topic, allowedTopic)) { ok = true; break; }
+    }
+
+    if (ok) {
+      console.log(`[Publish] ${socket.clientId} 发布到: ${topic}`);
+      this.forwardMessage(topic, payload);
+
+      if (qos === 1) {
+        this.sendPuback(socket, { messageId, reasonCode: MQTT_5_REASON_CODE_SUCCESS });
+      } else if (qos === 2) {
+        this.sendPubrec(socket, { messageId, reasonCode: MQTT_5_REASON_CODE_SUCCESS });
+      }
+      // qos === 0：什么都不回
+      return;
+    }
+
+    console.log(`[Publish] ${socket.clientId} 被拒绝发布到: ${topic}`);
+
+    if (qos === 1) {
+      this.sendPuback(socket, { messageId, reasonCode: MQTT_5_REASON_CODE_NOT_AUTHORIZED });
+    } else if (qos === 2) {
+      this.sendPubrec(socket, { messageId, reasonCode: MQTT_5_REASON_CODE_NOT_AUTHORIZED });
+    }
+    // qos === 0：静默丢弃，不要回任何包
   }
+
+  sendPuback(socket, { messageId, reasonCode = MQTT_5_REASON_CODE_SUCCESS }) {
+    if (messageId == null) {
+      console.warn('sendPuback: 缺少 messageId，跳过（QoS 0 不应调用）');
+      return;
+    }
+    const pubAckObj = { cmd: 'puback', messageId, reasonCode };
+    console.log('ClientSessionInternal:sendPuback:pubAckObj=<', pubAckObj, '>');
+    socket.write(mqttPacket.generate(pubAckObj, MQTT_5_OPTION));
+  }
+
+  sendPubrec(socket, { messageId, reasonCode = MQTT_5_REASON_CODE_SUCCESS }) {
+    if (messageId == null) return;
+    const pubRecObj = { cmd: 'pubrec', messageId, reasonCode };
+    socket.write(mqttPacket.generate(pubRecObj, MQTT_5_OPTION));
+  }
+  
+  forwardMessage(topic, payload) {
+    console.log(`[Forward] 转发消息到主题: ${topic}, 负载: ${payload.toString()}`);
+    const subscriptions = this.topics.getSubscriptions();
+    console.log('ClientSessionInternal:forwardMessage:subscriptions=<', subscriptions, '>');
+
+  }
+
 
   handlePingreq(socket) {
     const pingrespPacket = mqttPacket.generate({
@@ -272,8 +318,6 @@ class ClientSessionInternal {
     }, MQTT_5_OPTION);
     socket.write(pingrespPacket);
   }
-
-
 
 }
 

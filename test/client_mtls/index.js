@@ -38,11 +38,58 @@ const connectWithMTLS = () => {
     // console.log('connack.properties.userProperties.acl=<', acl, '>');
     const parsedAcl = acl ? JSON.parse(acl) : null;
     console.log('parsedAcl=<', parsedAcl, '>');
-    client.subscribe('secure/topic', (err) => {
-      if (!err) {
-        client.publish('secure/topic', 'Hello mqtt with mTLS');
+    const topSpace = parsedAcl?.[0]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+    console.log('topSpace=<', topSpace, '>');
+    const leafSpace = parsedAcl?.[parsedAcl.length - 1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+    console.log('leafSpace=<', leafSpace, '>');
+
+
+    const subTopic1 = `${topSpace}/secure/topic`;
+    console.log('subTopic1=<', subTopic1, '>');
+    client.subscribe(subTopic1, (err) => {
+      if (err) {
+        console.log('订阅失败:', err);
+      } else {
+        console.log('已订阅 ', subTopic1);
       }
     });
+
+    const subTopic2 = `${leafSpace}/secure/topic`;
+    console.log('subTopic2=<', subTopic2, '>');
+    client.subscribe(subTopic2, (err) => {
+      if (err) {
+        console.log('订阅失败:', err);
+      } else {
+        console.log('已订阅 ', subTopic2);
+      }
+    });
+
+
+    if(true) {
+      const pubTopic1 = `${leafSpace}/secure/topic`;
+      setTimeout(() => {
+        client.publish(pubTopic1, 'Hello from mTLS client!', (err) => {
+          if (err) {
+            console.error('发布消息失败:', err);
+          } else {
+            console.log('已发布消息到 ', pubTopic1);
+          }
+        });
+      }, 2000);
+    }
+
+    if(false) {
+      const pubTopic2 = `${topSpace}/secure/topic`;
+      setTimeout(() => {
+        client.publish(pubTopic2, 'Hello from mTLS client!', (err) => {
+          if (err) {
+            console.error('发布消息失败:', err);
+          } else {
+            console.log('已发布消息到 ', pubTopic2);
+          }
+        });
+      }, 2000);
+    }
   });
 
   client.on('message', (topic, message) => {
