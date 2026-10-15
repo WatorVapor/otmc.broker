@@ -22,12 +22,41 @@ class ClientTopic {
 
   getSubscriptions(topic) {
     console.log('ClientTopic:getSubscriptions:topic=<', topic, '>');
+    console.log('ClientTopic:getSubscriptions:subscriptions=<', subscriptions, '>');
     if(subscriptions.has(topic)) {
       const targetSubs = subscriptions.get(topic);
       console.log('ClientTopic:getSubscriptions:targetSubs=<', targetSubs, '>');
       return Array.from(targetSubs);
     }
-    return [];
+    return this.mathPatternSubscriptions(topic);
+  }
+
+  mathPatternSubscriptions(topic) {
+    console.log('ClientTopic:mathPatternSubscriptions:topic=<', topic, '>');
+    const result = [];
+    for(const [subscribedTopic, clients] of subscriptions.entries()) {
+      console.log('ClientTopic:mathPatternSubscriptions:subscribedTopic=<', subscribedTopic, '>');
+      const levels = topic.split('/');
+      const subLevels = subscribedTopic.split('/');
+      let match = true;
+      for(let i = 0; i < subLevels.length; i++) {
+        if(subLevels[i] === '#') {
+          break;
+        }
+        if(subLevels[i] === '+') {
+          continue;
+        }
+        if(levels[i] !== subLevels[i]) {
+          match = false;
+          break;
+        }
+      }
+      if(match) {
+        result.push(...clients);
+      }
+    }
+    console.log('ClientTopic:mathPatternSubscriptions:result=<', result, '>');
+    return result;
   }
 
 }

@@ -13,6 +13,9 @@ const MQTT_5_REASON_CODE_SUCCESS = 0x00;
 const MQTT_5_REASON_CODE_NOT_AUTHORIZED = 0x87;
 const MQTT_5_GRANTED_CODE_NOT_AUTHORIZED = 0x87;
 
+const CLIENT_ID_BYTE_LENGTH = 8;
+
+
 class ClientSession {
   constructor(socket) {
     this.socket = socket;
@@ -75,8 +78,8 @@ class ClientSessionInternal {
 
   handleConnect(socket, packet, client) {
     console.log('ClientSessionInternal:handleConnect:packet=<', packet, '>');
-    const fromClientId = packet.clientId || `client_${crypto.randomBytes(32).toString('base64')}`;
-    const clientIdBroker = `${fromClientId}_broker_${crypto.randomBytes(8).toString('base64')}`;
+    const fromClientId = packet.clientId || `client_${crypto.randomBytes(CLIENT_ID_BYTE_LENGTH).toString('base64url')}`;
+    const clientIdBroker = `${fromClientId}_broker_${crypto.randomBytes(CLIENT_ID_BYTE_LENGTH).toString('base64url')}`;
     console.log('ClientSessionInternal:handleConnect:clientId=<', clientIdBroker, '>');
     socket.clientId = clientIdBroker;
     this.collect.addClient(clientIdBroker, client);
@@ -312,7 +315,7 @@ class ClientSessionInternal {
       const targetClient = this.collect.getClient(targetClientId);
       console.log('ClientSessionInternal:forwardMessage:targetClient=<', targetClient, '>');
       if(!targetClient || !targetClient.socket) {
-        console.log(`[Error] 无法找到客户端 ${clientId} 的连接`);
+        console.log(`[Error] 无法找到客户端 ${targetClientId} 的连接`);
         continue;
       }
       const forwardMsg = {

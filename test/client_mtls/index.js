@@ -3,6 +3,11 @@ import fs from 'fs';
 import crypto from 'node:crypto';
 import bs58 from 'bs58';
 
+const CLIENT_ID_BYTE_LENGTH = 8;
+
+const myClientId = `client_mtls_${crypto.randomBytes(CLIENT_ID_BYTE_LENGTH).toString('base64url')}`;
+
+
 const connectWithMTLS = () => {
   let ca, cert, key;
   try {
@@ -15,7 +20,7 @@ const connectWithMTLS = () => {
   }
 
   const options = {
-    clientId: 'client_mtls_' + Math.random().toString(16).substring(2, 10),
+    clientId: myClientId,
     protocolVersion: 5,
     clean: true,
     ca: ca,
@@ -29,6 +34,7 @@ const connectWithMTLS = () => {
   };
 
   const client = mqtt.connect('mqtts://mqtt-broker-local10001.wator.xyz:8883', options);
+  client.handleAuth = (packet, callback) => handleAuth(packet, callback, key, cert);
 
   client.on('connect', (connack) => {
     console.log('✅ 已连接（TLS 客户端证书认证）');
@@ -43,7 +49,10 @@ const connectWithMTLS = () => {
     const leafSpace = parsedAcl?.[parsedAcl.length - 1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
     console.log('leafSpace=<', leafSpace, '>');
 
+    const midSpace = parsedAcl?.[1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+    console.log('midSpace=<', midSpace, '>');
 
+/*
     const subTopic1 = `${topSpace}/secure/topic`;
     console.log('subTopic1=<', subTopic1, '>');
     client.subscribe(subTopic1, (err) => {
@@ -53,7 +62,8 @@ const connectWithMTLS = () => {
         console.log('已订阅 ', subTopic1);
       }
     });
-
+*/
+/*
     const subTopic2 = `${leafSpace}/secure/topic`;
     console.log('subTopic2=<', subTopic2, '>');
     client.subscribe(subTopic2, (err) => {
@@ -63,12 +73,22 @@ const connectWithMTLS = () => {
         console.log('已订阅 ', subTopic2);
       }
     });
+*/
+    const subTopic3 = `${midSpace}/+/secure/topic`;
+    console.log('subTopic3=<', subTopic3, '>');
+    client.subscribe(subTopic3, (err) => {
+      if (err) {
+        console.log('订阅失败:', err);
+      } else {
+        console.log('已订阅 ', subTopic3);
+      }
+    });
 
 
     if(true) {
       const pubTopic1 = `${leafSpace}/secure/topic`;
       setTimeout(() => {
-        client.publish(pubTopic1, 'Hello from mTLS client!', (err) => {
+        client.publish(pubTopic1, `Hello from mTLS client ${myClientId}!`, (err) => {
           if (err) {
             console.error('发布消息失败:', err);
           } else {
@@ -81,7 +101,7 @@ const connectWithMTLS = () => {
     if(false) {
       const pubTopic2 = `${topSpace}/secure/topic`;
       setTimeout(() => {
-        client.publish(pubTopic2, 'Hello from mTLS client!', (err) => {
+        client.publish(pubTopic2, `Hello from mTLS client ${myClientId}!`, (err) => {
           if (err) {
             console.error('发布消息失败:', err);
           } else {
@@ -90,6 +110,9 @@ const connectWithMTLS = () => {
         });
       }, 2000);
     }
+
+
+    
   });
 
   client.on('message', (topic, message) => {
@@ -99,13 +122,8 @@ const connectWithMTLS = () => {
   client.on('error', (err) => {
     console.error('err:=<', err,'>');
   });
-
-  client.handleAuth = (packet, callback) => {
-    handleAuth(packet, callback,key,cert);
-  };
 }
 
-connectWithMTLS();
 
 const handleAuth = (packet, callback,key,cert) => {
   console.log('connectWithMTLS:handleAuth:packet=<',packet,'>');
@@ -126,7 +144,6 @@ const handleAuth = (packet, callback,key,cert) => {
   signature.update(JSON.stringify(challengeMsg));
   signature.end();
   const signedChallenge = signature.sign(key, 'base64');
-  
 
   // 从私钥生成公钥
   const privateKey = crypto.createPrivateKey({
@@ -165,3 +182,5 @@ const handleAuth = (packet, callback,key,cert) => {
     }
   });
 }
+
+connectWithMTLS();
