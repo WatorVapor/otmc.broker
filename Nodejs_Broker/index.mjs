@@ -18,11 +18,17 @@ const server = net.createServer((socket) => {
     if (socket.clientId) {
       clientSession.delete(socket.clientId)
       console.log(`[Disconnect] 客户端已断开: ${socket.clientId}`);
+      delete socket.clientId;
     }
   });
 
   socket.on('error', (err) => {
     console.error(`[Error] Socket 错误 (${socket.clientId || 'unknown'}):`, err.message);
+    if (socket.clientId) {
+      clientSession.delete(socket.clientId)
+      console.log(`[Disconnect] 客户端已断开: ${socket.clientId}`);
+      delete socket.clientId;
+    }
   });
 });
 

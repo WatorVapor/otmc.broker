@@ -65,6 +65,7 @@ class ClientSession {
     this.internal.collect.removeClient(clientId);
     this.internal.collect.removeChallenge(clientId);
     this.internal.acl.removeAcl(clientId);
+    this.internal.topics.removeClient(clientId);
   }
 }
 
@@ -313,7 +314,7 @@ class ClientSessionInternal {
     console.log('ClientSessionInternal:forwardMessage:clientIds=<', clientIds, '>');
     for(const targetClientId of clientIds) {
       const targetClient = this.collect.getClient(targetClientId);
-      console.log('ClientSessionInternal:forwardMessage:targetClient=<', targetClient, '>');
+      //console.log('ClientSessionInternal:forwardMessage:targetClient=<', targetClient, '>');
       if(!targetClient || !targetClient.socket) {
         console.log(`[Error] 无法找到客户端 ${targetClientId} 的连接`);
         continue;

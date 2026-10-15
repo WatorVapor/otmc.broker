@@ -31,6 +31,15 @@ class ClientTopic {
     return this.mathPatternSubscriptions(topic);
   }
 
+  removeClient(clientId) {
+    for(const [topic, clients] of subscriptions.entries()) {
+      clients.delete(clientId);
+      if(clients.size === 0) {
+        subscriptions.delete(topic);
+      }
+    }
+  }
+
   mathPatternSubscriptions(topic) {
     console.log('ClientTopic:mathPatternSubscriptions:topic=<', topic, '>');
     const result = [];

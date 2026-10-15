@@ -8,6 +8,23 @@ const CLIENT_ID_BYTE_LENGTH = 8;
 const myClientId = `client_mtls_${crypto.randomBytes(CLIENT_ID_BYTE_LENGTH).toString('base64url')}`;
 
 
+const parseSpaceInfo = (aclJsonStr) => {
+
+  const parsedAcl = aclJsonStr ? JSON.parse(aclJsonStr) : null;
+  console.log('parsedAcl=<', parsedAcl, '>');
+  const topSpace = parsedAcl?.[0]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+  console.log('topSpace=<', topSpace, '>');
+  const leafSpace = parsedAcl?.[parsedAcl.length - 1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+  console.log('leafSpace=<', leafSpace, '>');
+
+  const midSpace = parsedAcl?.[1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
+  console.log('midSpace=<', midSpace, '>');
+  const depth = parsedAcl?.length;
+
+  return {topSpace,leafSpace,midSpace};
+
+}
+
 const connectWithMTLS = () => {
   let ca, cert, key;
   try {
@@ -42,38 +59,30 @@ const connectWithMTLS = () => {
     // console.log('connack.properties=<', connack.properties, '>');
     const acl = connack.properties?.userProperties?.acl;
     // console.log('connack.properties.userProperties.acl=<', acl, '>');
-    const parsedAcl = acl ? JSON.parse(acl) : null;
-    console.log('parsedAcl=<', parsedAcl, '>');
-    const topSpace = parsedAcl?.[0]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
-    console.log('topSpace=<', topSpace, '>');
-    const leafSpace = parsedAcl?.[parsedAcl.length - 1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
-    console.log('leafSpace=<', leafSpace, '>');
+    const {topSpace,leafSpace,midSpace} = parseSpaceInfo(acl);
 
-    const midSpace = parsedAcl?.[1]?.topic.replace(/\/\+$/, '').replace(/\/#$/, ''); // 移除末尾的 "/+" 和 "/#"
-    console.log('midSpace=<', midSpace, '>');
-
-/*
-    const subTopic1 = `${topSpace}/secure/topic`;
-    console.log('subTopic1=<', subTopic1, '>');
-    client.subscribe(subTopic1, (err) => {
-      if (err) {
-        console.log('订阅失败:', err);
-      } else {
-        console.log('已订阅 ', subTopic1);
-      }
-    });
-*/
-/*
-    const subTopic2 = `${leafSpace}/secure/topic`;
-    console.log('subTopic2=<', subTopic2, '>');
-    client.subscribe(subTopic2, (err) => {
-      if (err) {
-        console.log('订阅失败:', err);
-      } else {
-        console.log('已订阅 ', subTopic2);
-      }
-    });
-*/
+    if(false) {
+      const subTopic1 = `${topSpace}/secure/topic`;
+      console.log('subTopic1=<', subTopic1, '>');
+      client.subscribe(subTopic1, (err) => {
+        if (err) {
+          console.log('订阅失败:', err);
+        } else {
+          console.log('已订阅 ', subTopic1);
+        }
+      });
+    }
+    if(false) {
+      const subTopic2 = `${leafSpace}/secure/topic`;
+      console.log('subTopic2=<', subTopic2, '>');
+      client.subscribe(subTopic2, (err) => {
+        if (err) {
+          console.log('订阅失败:', err);
+        } else {
+          console.log('已订阅 ', subTopic2);
+        }
+      });
+    }
     const subTopic3 = `${midSpace}/+/secure/topic`;
     console.log('subTopic3=<', subTopic3, '>');
     client.subscribe(subTopic3, (err) => {
