@@ -1,0 +1,18 @@
+services:
+  nginx-inner:
+    image: nginx:mainline
+    container_name: otmc-nginx-dashboard
+    volumes:
+      - ./nginx/nginx/conf.d:/etc/nginx/nginx/conf.d:ro
+      - /dev/shm/otmc/:/var/run/otmc/
+      - /watorvapor/ecdsa-cert/certbot/etc:/etc/cert:ro
+      - /watorvapor/log/nginx:/log
+    network_mode : "host"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 32M
+
