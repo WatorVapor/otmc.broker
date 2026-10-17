@@ -3,7 +3,9 @@ services:
     image: nginx:mainline
     container_name: otmc-nginx-dashboard
     volumes:
-      - ./nginx/nginx/conf.d:/etc/nginx/nginx/conf.d:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./www:/www
       - /dev/shm/otmc/:/var/run/otmc/
       - /watorvapor/ecdsa-cert/certbot/etc:/etc/cert:ro
       - /watorvapor/log/nginx:/log
