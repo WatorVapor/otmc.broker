@@ -1,5 +1,9 @@
-import { createApp, reactive, ref, computed, onMounted, shallowRef } from 'vue';
-import Antd, { message } from 'ant-design-vue';
+/* ============================================================
+ *  全局变量方式：Vue / antd / dayjs 都来自 <script> 引入的 window 对象
+ *  注意：本文件不能加 type="module"，也不能用 import 语句
+ * ============================================================ */
+const { createApp, reactive, ref, computed, onMounted, shallowRef } = Vue;
+const { message } = antd;
 
 /* ============================================================
  *  ASN.1 DER 编码工具
@@ -76,7 +80,6 @@ function toUint8Array(x) {
   if (x instanceof Uint8Array) return x;
   if (x instanceof ArrayBuffer) return new Uint8Array(x);
   if (ArrayBuffer.isView(x)) return new Uint8Array(x.buffer, x.byteOffset, x.byteLength);
-  // 兜底：从可迭代/类数组对象拷贝
   return new Uint8Array(x);
 }
 
@@ -89,7 +92,6 @@ const ATTR_OIDS = {
 };
 const OID_ECDSA_WITH_SHA384 = '1.2.840.10045.4.3.3';
 
-/** 用指定私钥（可导出或不可导出均可）对 Subject + SPKI 签名，返回 PEM 格式 CSR */
 async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   const spki = toUint8Array(publicKeySpki);
 
@@ -109,7 +111,6 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
     tlv(0xa0, new Uint8Array(0))
   );
 
-  // 用私钥签名（对不可导出私钥同样可用）
   const rawSig = new Uint8Array(
     await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-384' }, privateKey, cri)
   );
@@ -197,11 +198,10 @@ const app = createApp({
       CN: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert',
     });
 
-    // 只把 PEM 字符串放进 reactive；CryptoKey 绝不放进响应式系统
     const result = reactive({
       csrPem: '',
       publicKeyPem: '',
-      privateKeyPem: '',   // 仅在 extractable=true 时有值
+      privateKeyPem: '',
       subject: '',
       createdAt: '',
       extractable: false,
@@ -211,7 +211,7 @@ const app = createApp({
     const hasStored = ref(false);
     const cryptoOk = ref(true);
     const indexedDbOk = ref(true);
-    const allowExport = ref(false);       // 默认非导出
+    const allowExport = ref(false);
     const legacyDetected = ref(false);
 
     const hasResult = computed(() => !!result.csrPem);
@@ -228,7 +228,6 @@ const app = createApp({
       attrs.forEach((a) => { if (a.key in form) form[a.key] = a.value; });
     }
 
-    /* ---------- 生成 ---------- */
     async function onGenerate() {
       if (!form.C || !form.O || !form.CN) {
         message.warning('请至少填写 C、O、CN');
@@ -246,7 +245,6 @@ const app = createApp({
           value: (form[f.key] || '').trim(),
         }));
 
-        // 关键：extractable 由用户勾选决定，默认 false
         const extractable = allowExport.value;
 
         const keyPair = await crypto.subtle.generateKey(
@@ -255,15 +253,12 @@ const app = createApp({
           ['sign', 'verify']
         );
 
-        // 公钥始终可导出
         const spki = new Uint8Array(
           await crypto.subtle.exportKey('spki', keyPair.publicKey)
         );
 
-        // 构造并签名 CSR
         const csrPem = await buildCsrPem(attrs, spki, keyPair.privateKey);
 
-        // 仅在 extractable=true 时导出私钥
         let privateKeyPem = '';
         if (extractable) {
           const pkcs8 = new Uint8Array(
@@ -278,7 +273,6 @@ const app = createApp({
           .map((a) => `/${a.key}=${a.value}`)
           .join('');
 
-        // 存储：CryptoKey 直接以对象形式存入 IndexedDB（结构化克隆）
         await dbPut(RECORD_KEY, {
           version: 2,
           extractable,
@@ -286,8 +280,8 @@ const app = createApp({
           subject,
           subjectAttrs: attrs,
           createdAt,
-          publicKeySpki: spki,     // Uint8Array
-          privateKey: keyPair.privateKey, // CryptoKey（不可导出模式下亦支持克隆）
+          publicKeySpki: spki,
+          privateKey: keyPair.privateKey,
         });
 
         Object.assign(result, {
@@ -313,7 +307,6 @@ const app = createApp({
       }
     }
 
-    /* ---------- 加载 ---------- */
     async function onLoad() {
       loading.value = true;
       try {
@@ -323,7 +316,6 @@ const app = createApp({
           return;
         }
 
-        // 用读出的 CryptoKey 重新签名生成 CSR
         const csrPem = await buildCsrPem(
           record.subjectAttrs,
           record.publicKeySpki,
@@ -360,7 +352,6 @@ const app = createApp({
       }
     }
 
-    /* ---------- 清除 ---------- */
     async function onClear() {
       try {
         await dbDelete(RECORD_KEY);
@@ -376,7 +367,6 @@ const app = createApp({
       }
     }
 
-    /* ---------- 旧版 localStorage 迁移 ---------- */
     function checkLegacy() {
       try {
         legacyDetected.value = !!localStorage.getItem(LEGACY_LOCALSTORAGE_KEY);
@@ -396,13 +386,12 @@ const app = createApp({
           return;
         }
 
-        // 从 PEM PKCS#8 导入可导出私钥
         const pkcs8 = pemToBytes(data.privateKeyPem, 'PRIVATE KEY');
         const privateKey = await crypto.subtle.importKey(
           'pkcs8',
           pkcs8,
           { name: 'ECDSA', namedCurve: 'P-384' },
-          true, // 迁移场景保留导出能力，避免用户丢失原始文件
+          true,
           ['sign', 'verify']
         );
         const publicKey = await crypto.subtle.importKey(
@@ -449,7 +438,6 @@ const app = createApp({
       }
     }
 
-    /* ---------- 复制 / 下载 ---------- */
     async function copyText(text) {
       if (!text) return;
       try {
@@ -477,7 +465,6 @@ const app = createApp({
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    /* ---------- 初始化 ---------- */
     onMounted(async () => {
       cryptoOk.value = !!(window.crypto && window.crypto.subtle);
       try {
@@ -527,5 +514,5 @@ function pemToBytes(pem, label) {
   return out;
 }
 
-app.use(Antd);
+app.use(antd);
 app.mount('#app');

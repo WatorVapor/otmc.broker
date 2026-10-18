@@ -3,11 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MQTT mTLS · Client Leaf 密钥与 CSR 生成器（IndexedDB 安全版）</title>
+  <title>OTMC Client Leaf 密钥与 CSR 生成器</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
-  <!--
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.css" />
-  -->
   <style>
     html, body { margin: 0; padding: 0; }
     body { background: #f0f2f5; }
@@ -37,7 +34,7 @@
 
 <div id="app">
   <div class="page-header">
-    MQTT mTLS · Client Leaf (Space 3rd Level) 密钥与 CSR 生成器（IndexedDB 安全版）
+    OTMC Client Leaf 密钥与 CSR 生成器
   </div>
 
   <div class="page-content">
@@ -45,35 +42,11 @@
     <a-alert
       v-if="!cryptoOk" type="error" show-icon style="margin-bottom: 16px"
       message="当前环境不支持 Web Crypto API（需要使用 HTTPS 或 localhost 访问）"
-    />
+    ></a-alert>
     <a-alert
       v-if="!indexedDbOk" type="error" show-icon style="margin-bottom: 16px"
       message="当前环境不支持 IndexedDB，无法安全存储密钥"
-    />
-
-    <a-alert type="success" show-icon style="margin-bottom: 16px">
-      <template #message>安全存储策略：非导出密钥 + IndexedDB</template>
-      <template #description>
-        默认生成的私钥为 <b>不可导出 CryptoKey</b>，直接以对象形式存入 IndexedDB。
-        任何尝试调用 <span class="mono">crypto.subtle.exportKey()</span> 读取私钥明文的行为都会被浏览器拒绝，
-        页面只保留签名能力（<span class="mono">crypto.subtle.sign()</span>）。
-        XSS 无法直接窃取私钥字节，但无法阻止恶意脚本“代理签名”。
-      </template>
-    </a-alert>
-
-    <!-- 旧版 localStorage 数据检测 -->
-    <a-alert
-      v-if="legacyDetected"
-      type="warning" show-icon style="margin-bottom: 16px"
-      message="检测到旧版本 localStorage 中存在私钥明文数据"
-    >
-      <template #action>
-        <a-space>
-          <a-button size="small" @click="migrateLegacy">迁移到安全存储</a-button>
-          <a-button size="small" danger @click="clearLegacy">直接删除</a-button>
-        </a-space>
-      </template>
-    </a-alert>
+    ></a-alert>
 
     <!-- ① Subject -->
     <a-card class="section" title="① 证书 Subject (DN)">
@@ -92,7 +65,7 @@
           <span class="mono">{{ subjectString || '(空)' }}</span>
         </a-descriptions-item>
         <a-descriptions-item label="密钥算法">
-          ECDSA P-384（secp384r1）· 签名摘要 SHA-384
+          ECDSA P-384（secp384r1）· 签名摘要 SHA-384 · 私钥不可导出
         </a-descriptions-item>
         <a-descriptions-item label="等价 openssl">
           <span class="mono">
@@ -104,17 +77,6 @@
 
     <!-- ② 生成 -->
     <a-card class="section" title="② 生成 / 存储">
-      <a-form layout="vertical">
-        <a-form-item>
-          <a-checkbox v-model:checked="allowExport">
-            允许导出私钥（兼容传统 MQTT 客户端）
-            <a-typography-text type="secondary" style="margin-left: 8px">
-              勾选后私钥 extractable=true，可下载 .key 文件，但失去“非导出”保护
-            </a-typography-text>
-          </a-checkbox>
-        </a-form-item>
-      </a-form>
-
       <a-space wrap>
         <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
           生成密钥对与 CSR
@@ -128,12 +90,18 @@
       </a-space>
 
       <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
-        ⚠️ 重新生成会<b>覆盖</b> IndexedDB 中已有的密钥。若当前密钥为不可导出模式，旧密钥将永久丢失，且无法恢复。
+        ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
+        重新生成会<b>覆盖</b> IndexedDB 中已有的密钥，旧密钥将永久丢失，且无法恢复。
       </a-typography-paragraph>
     </a-card>
 
     <!-- ③ 结果 -->
     <a-card v-if="hasResult" class="section" title="③ 结果">
+      <a-alert
+        v-if="!result.csrPem"
+        type="info" show-icon style="margin-bottom: 16px"
+        message="已生成密钥对（尚未生成 CSR）。点击上方“从 IndexedDB 加载”即可用该密钥签名生成 CSR。"
+      ></a-alert>
       <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
         <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
         <a-descriptions-item label="IndexedDB Record">
@@ -143,28 +111,19 @@
           <span class="mono">{{ result.subject }}</span>
         </a-descriptions-item>
         <a-descriptions-item label="私钥类型" :span="2">
-          <a-tag v-if="result.extractable" color="orange">可导出（extractable=true）</a-tag>
-          <a-tag v-else color="green">不可导出（extractable=false）</a-tag>
+          <a-tag color="green">不可导出（extractable=false）</a-tag>
         </a-descriptions-item>
       </a-descriptions>
 
-      <!-- 私钥 -->
+      <!-- 私钥（始终不可导出） -->
       <div class="pem-block">
         <div class="pem-head">
           <span>
             <a-typography-text strong>私钥</a-typography-text>
-            <a-tag v-if="result.extractable" color="orange" style="margin-left: 8px">client-space-leaf.key</a-tag>
-            <a-tag v-else color="green" style="margin-left: 8px">不可导出</a-tag>
+            <a-tag color="green" style="margin-left: 8px">不可导出</a-tag>
           </span>
-          <a-space v-if="result.extractable && result.privateKeyPem">
-            <a-button size="small" @click="copyText(result.privateKeyPem)">复制</a-button>
-            <a-button size="small" @click="downloadFile('client-space-leaf.key', result.privateKeyPem)">下载</a-button>
-          </a-space>
         </div>
-        <div v-if="result.extractable && result.privateKeyPem">
-          <a-textarea :rows="6" :value="result.privateKeyPem" readonly class="pem-text" />
-        </div>
-        <div v-else class="secure-box">
+        <div class="secure-box">
           🔒 私钥为不可导出 CryptoKey，已安全存储在 IndexedDB 中。
           浏览器拒绝任何 <span class="mono">exportKey()</span> 读取私钥明文的请求；
           页面仅保留 <span class="mono">sign()</span> 签名能力。无法下载 .key 文件。
@@ -237,7 +196,7 @@
       </a-typography-paragraph>
       <a-typography-paragraph>
         <b>不适用场景</b>：需要把私钥交给 mosquitto_pub、mqtt.js（Node）、ESP32 等外部 MQTT 客户端。
-        这类场景请勾选“允许导出私钥”，生成后立即把 .key 从浏览器中删除，或在服务器侧用 openssl 生成。
+        本页面不提供私钥导出能力；这类场景请在服务器侧用 openssl 生成私钥与 CSR。
       </a-typography-paragraph>
       <a-typography-paragraph type="danger" style="margin-bottom: 0">
         <b>威胁模型</b>：非导出密钥可防止私钥字节被 XSS 读取并外传；但恶意脚本仍可调用
@@ -248,17 +207,455 @@
   </div>
 </div>
 
-<!-- ESM 方案：esm.sh 自动打包 dayjs 及其全部插件，无需手动管理 -->
-<script type="importmap">
-{
-  "imports": {
-    "vue": "https://esm.sh/vue@3.5.13",
-    "ant-design-vue": "https://esm.sh/ant-design-vue@4.2.6?external=vue"
-  }
-}
+<!-- 1. Day.js + 插件 -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js"></script>
+<script>
+  dayjs.extend(dayjs_plugin_customParseFormat);
+  dayjs.extend(dayjs_plugin_weekday);
+  dayjs.extend(dayjs_plugin_localeData);
+  dayjs.extend(dayjs_plugin_weekOfYear);
+  dayjs.extend(dayjs_plugin_weekYear);
+  dayjs.extend(dayjs_plugin_advancedFormat);
+  dayjs.extend(dayjs_plugin_quarterOfYear);
 </script>
 
-<script src="./csr.js" type="module"></script>
+<!-- 2. Vue 3 全局构建 -->
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+
+<!-- 3. Ant Design Vue V4 UMD -->
+<script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.js"></script>
+
+<!-- 4. 业务脚本 -->
+<script>
+const { createApp, reactive, ref, computed, onMounted } = Vue;
+const { message } = antd;
+
+const textEncoder = new TextEncoder();
+
+function concatBytes(...chunks) {
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+function derLength(len) {
+  if (len < 0x80) return new Uint8Array([len]);
+  const tmp = [];
+  let n = len;
+  while (n > 0) { tmp.unshift(n & 0xff); n = Math.floor(n / 256); }
+  return new Uint8Array([0x80 | tmp.length, ...tmp]);
+}
+
+function tlv(tag, content) {
+  return concatBytes(new Uint8Array([tag]), derLength(content.length), content);
+}
+
+const derSequence = (...items) => tlv(0x30, concatBytes(...items));
+const derSet = (...items) => tlv(0x31, concatBytes(...items));
+
+function derInteger(bytes) {
+  let i = 0;
+  while (i < bytes.length - 1 && bytes[i] === 0) i++;
+  let v = bytes.subarray(i);
+  if (v[0] & 0x80) v = concatBytes(new Uint8Array([0x00]), v);
+  return tlv(0x02, v);
+}
+
+function derOid(oidStr) {
+  const parts = oidStr.split('.').map(Number);
+  const bytes = [40 * parts[0] + parts[1]];
+  for (let i = 2; i < parts.length; i++) {
+    let n = parts[i];
+    const buf = [n & 0x7f];
+    n = Math.floor(n / 128);
+    while (n > 0) { buf.unshift((n & 0x7f) | 0x80); n = Math.floor(n / 128); }
+    bytes.push(...buf);
+  }
+  return tlv(0x06, new Uint8Array(bytes));
+}
+
+const derUtf8 = (s) => tlv(0x0c, textEncoder.encode(s));
+const derBitString = (bytes) => tlv(0x03, concatBytes(new Uint8Array([0x00]), bytes));
+
+function ecdsaRawToDer(raw) {
+  const half = raw.length / 2;
+  return derSequence(
+    derInteger(raw.subarray(0, half)),
+    derInteger(raw.subarray(half, half * 2))
+  );
+}
+
+function pemFromDer(der, label) {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < der.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, der.subarray(i, i + CHUNK));
+  }
+  const b64 = btoa(binary);
+  const lines = (b64.match(/.{1,64}/g) || []).join('\n');
+  return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`;
+}
+
+function toUint8Array(x) {
+  if (x instanceof Uint8Array) return x;
+  if (x instanceof ArrayBuffer) return new Uint8Array(x);
+  if (ArrayBuffer.isView(x)) return new Uint8Array(x.buffer, x.byteOffset, x.byteLength);
+  return new Uint8Array(x);
+}
+
+const ATTR_OIDS = {
+  C: '2.5.4.6', ST: '2.5.4.8', L: '2.5.4.7',
+  O: '2.5.4.10', OU: '2.5.4.11', CN: '2.5.4.3',
+};
+const OID_ECDSA_WITH_SHA384 = '1.2.840.10045.4.3.3';
+
+async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
+  const spki = toUint8Array(publicKeySpki);
+
+  const rdnSeq = subjectAttrs
+    .filter((a) => a.value)
+    .map((a) => {
+      const oid = ATTR_OIDS[a.key];
+      if (!oid) throw new Error('不支持的 Subject 属性: ' + a.key);
+      return derSet(derSequence(derOid(oid), derUtf8(a.value)));
+    });
+  const subject = derSequence(...rdnSeq);
+
+  const cri = derSequence(
+    derInteger(new Uint8Array([0x00])),
+    subject,
+    spki,
+    tlv(0xa0, new Uint8Array(0))
+  );
+
+  const rawSig = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-384' }, privateKey, cri)
+  );
+  const sigDer = ecdsaRawToDer(rawSig);
+
+  const csrDer = derSequence(
+    cri,
+    derSequence(derOid(OID_ECDSA_WITH_SHA384)),
+    derBitString(sigDer)
+  );
+
+  return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
+}
+
+const DB_NAME = 'mqtt-mtls-keystore';
+const DB_VERSION = 1;
+const STORE_NAME = 'keys';
+const RECORD_KEY = 'client-space-leaf';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('IndexedDB 不可用'));
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbPut(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function dbDelete(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+const app = createApp({
+  setup() {
+    const subjectFields = [
+      { key: 'C',  label: 'C (Country)',          placeholder: 'JP' },
+      { key: 'ST', label: 'ST (State / Province)', placeholder: 'Tokyo' },
+      { key: 'L',  label: 'L (Locality)',          placeholder: '(可选)' },
+      { key: 'O',  label: 'O (Organization)',      placeholder: 'Client' },
+      { key: 'OU', label: 'OU (Org Unit)',         placeholder: '(可选)' },
+      { key: 'CN', label: 'CN (Common Name)',      placeholder: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert' },
+    ];
+
+    const form = reactive({
+      C: 'JP', ST: 'Tokyo', L: '', O: 'Client', OU: '',
+      CN: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert',
+    });
+
+    const result = reactive({
+      csrPem: '',
+      publicKeyPem: '',
+      subject: '',
+      createdAt: '',
+    });
+
+    const loading = ref(false);
+    const hasStored = ref(false);
+    const cryptoOk = ref(true);
+    const indexedDbOk = ref(true);
+
+    const hasResult = computed(() => !!(result.csrPem || result.publicKeyPem));
+
+    const subjectString = computed(() =>
+      subjectFields
+        .filter((f) => form[f.key])
+        .map((f) => `/${f.key}=${form[f.key]}`)
+        .join('')
+    );
+
+    function fillFormFromAttrs(attrs) {
+      if (!Array.isArray(attrs)) return;
+      attrs.forEach((a) => { if (a.key in form) form[a.key] = a.value; });
+    }
+
+    async function generateKeyPairAndStore() {
+      const attrs = subjectFields.map((f) => ({
+        key: f.key,
+        value: (form[f.key] || '').trim(),
+      }));
+
+      const keyPair = await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-384' },
+        false,
+        ['sign', 'verify']
+      );
+
+      const spki = new Uint8Array(
+        await crypto.subtle.exportKey('spki', keyPair.publicKey)
+      );
+
+      const createdAt = new Date().toISOString();
+      const subject = attrs
+        .filter((a) => a.value)
+        .map((a) => `/${a.key}=${a.value}`)
+        .join('');
+
+      await dbPut(RECORD_KEY, {
+        version: 2,
+        extractable: false,
+        algorithm: 'ECDSA P-384 / SHA-384',
+        subject,
+        subjectAttrs: attrs,
+        createdAt,
+        publicKeySpki: spki,
+        privateKey: keyPair.privateKey,
+      });
+
+      return { keyPair, spki, attrs, subject, createdAt };
+    }
+
+    async function onGenerate() {
+      if (!form.C || !form.O || !form.CN) {
+        message.warning('请至少填写 C、O、CN');
+        return;
+      }
+      if (!indexedDbOk.value) {
+        message.error('IndexedDB 不可用，无法安全存储密钥');
+        return;
+      }
+
+      loading.value = true;
+      try {
+        const { keyPair, spki, attrs, subject, createdAt } =
+          await generateKeyPairAndStore();
+
+        const csrPem = await buildCsrPem(attrs, spki, keyPair.privateKey);
+
+        Object.assign(result, {
+          csrPem,
+          publicKeyPem: pemFromDer(spki, 'PUBLIC KEY'),
+          subject,
+          createdAt,
+        });
+
+        hasStored.value = true;
+        message.success('非导出密钥已生成并安全存入 IndexedDB（私钥不可下载），CSR 已生成');
+      } catch (e) {
+        console.error(e);
+        message.error('生成失败：' + (e && e.message ? e.message : e));
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    async function onGenerateKeyOnly() {
+      if (!form.C || !form.O || !form.CN) {
+        message.warning('请至少填写 C、O、CN');
+        return;
+      }
+      if (!indexedDbOk.value) {
+        message.error('IndexedDB 不可用，无法安全存储密钥');
+        return;
+      }
+
+      loading.value = true;
+      try {
+        const { spki, subject, createdAt } = await generateKeyPairAndStore();
+
+        Object.assign(result, {
+          csrPem: '',
+          publicKeyPem: pemFromDer(spki, 'PUBLIC KEY'),
+          subject,
+          createdAt,
+        });
+
+        hasStored.value = true;
+        message.success('非导出密钥已生成并安全存入 IndexedDB（未生成 CSR）');
+      } catch (e) {
+        console.error(e);
+        message.error('生成密钥失败：' + (e && e.message ? e.message : e));
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    async function onLoad() {
+      loading.value = true;
+      try {
+        const record = await dbGet(RECORD_KEY);
+        if (!record || !record.privateKey) {
+          message.warning('IndexedDB 中没有找到已保存的密钥');
+          return;
+        }
+
+        const csrPem = await buildCsrPem(
+          record.subjectAttrs,
+          record.publicKeySpki,
+          record.privateKey
+        );
+
+        fillFormFromAttrs(record.subjectAttrs);
+
+        Object.assign(result, {
+          csrPem,
+          publicKeyPem: pemFromDer(toUint8Array(record.publicKeySpki), 'PUBLIC KEY'),
+          subject: record.subject || '',
+          createdAt: record.createdAt || '',
+        });
+
+        hasStored.value = true;
+        message.success('已从 IndexedDB 加载密钥并重新生成 CSR 签名');
+      } catch (e) {
+        console.error(e);
+        message.error('加载失败：' + (e && e.message ? e.message : e));
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    async function onClear() {
+      try {
+        await dbDelete(RECORD_KEY);
+        hasStored.value = false;
+        Object.assign(result, {
+          csrPem: '', publicKeyPem: '',
+          subject: '', createdAt: '',
+        });
+        message.success('已清除 IndexedDB 中的密钥');
+      } catch (e) {
+        console.error(e);
+        message.error('清除失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    async function copyText(text) {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        message.success('已复制到剪贴板');
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); message.success('已复制到剪贴板'); }
+        catch (err) { message.error('复制失败，请手动选择文本'); }
+        document.body.removeChild(ta);
+      }
+    }
+
+    function downloadFile(filename, content) {
+      if (!content) return;
+      const blob = new Blob([content], { type: 'application/x-pem-file' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    onMounted(async () => {
+      cryptoOk.value = !!(window.crypto && window.crypto.subtle);
+      try {
+        await openDB();
+        indexedDbOk.value = true;
+      } catch (e) {
+        indexedDbOk.value = false;
+        console.warn('IndexedDB 不可用', e);
+      }
+
+      if (indexedDbOk.value) {
+        try {
+          const record = await dbGet(RECORD_KEY);
+          if (record && record.privateKey) {
+            hasStored.value = true;
+            message.info('检测到 IndexedDB 中已保存的密钥，点击“从 IndexedDB 加载”以使用');
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+    });
+
+    return {
+      subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
+      hasResult, subjectString,
+      dbName: DB_NAME, recordKey: RECORD_KEY,
+      onGenerate, onGenerateKeyOnly, onLoad, onClear,
+      copyText, downloadFile,
+    };
+  },
+});
+
+app.use(antd);
+app.mount('#app');
+</script>
 
 </body>
 </html>
