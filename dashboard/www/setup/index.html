@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OTMC Client Leaf 密钥与 CSR 生成器</title>
+  <title>OTMC Client 密钥与 CSR 生成器</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
   <style>
     html, body { margin: 0; padding: 0; }
@@ -28,13 +28,14 @@
       background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;
       padding: 12px 16px; color: #135200;
     }
+    .secure-box.ca { background: #fff2e8; border-color: #ffbb96; color: #612500; }
   </style>
 </head>
 <body>
 
 <div id="app">
   <div class="page-header">
-    OTMC Client Leaf 密钥与 CSR 生成器
+    OTMC Client 密钥与 CSR 生成器
   </div>
 
   <div class="page-content">
@@ -48,8 +49,19 @@
       message="当前环境不支持 IndexedDB，无法安全存储密钥"
     ></a-alert>
 
-    <!-- ① Subject -->
-    <a-card class="section" title="① 证书 Subject (DN)">
+    <!-- ① 证书类型 + Subject -->
+    <a-card class="section" title="① 证书类型与 Subject (DN)">
+      <a-segmented
+        v-model:value="currentTypeKey"
+        :options="typeOptions"
+        block
+        style="margin-bottom: 12px"
+        @change="onTypeChange"
+      />
+      <a-typography-paragraph type="secondary" style="margin: 0 0 16px">
+        {{ currentType.hint }}
+      </a-typography-paragraph>
+
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :xs="24" :sm="12" :md="8" v-for="f in subjectFields" :key="f.key">
@@ -67,9 +79,15 @@
         <a-descriptions-item label="密钥算法">
           ECDSA P-384（secp384r1）· 签名摘要 SHA-384 · 私钥不可导出
         </a-descriptions-item>
+        <a-descriptions-item label="证书用途">
+          <a-tag v-if="currentType.pathLen !== null" color="red">
+            CA:TRUE · pathlen:{{ currentType.pathLen }} · 可签发下级证书
+          </a-tag>
+          <a-tag v-else color="blue">End-Entity · clientAuth</a-tag>
+        </a-descriptions-item>
         <a-descriptions-item label="等价 openssl">
           <span class="mono">
-            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out client-space-leaf.key
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out {{ currentType.filePrefix }}.key
           </span>
         </a-descriptions-item>
       </a-descriptions>
@@ -91,22 +109,24 @@
 
       <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
         ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
-        重新生成会<b>覆盖</b> IndexedDB 中已有的密钥，旧密钥将永久丢失，且无法恢复。
+        重新生成会<b>覆盖</b>当前证书类型已有的密钥，旧密钥将永久丢失，且无法恢复。
       </a-typography-paragraph>
     </a-card>
 
     <!-- ③ 结果 -->
     <a-card v-if="hasResult" class="section" title="③ 结果">
       <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
+        <a-descriptions-item label="证书类型">{{ currentType.label }}</a-descriptions-item>
         <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
-        <a-descriptions-item label="IndexedDB Record">
-          <span class="mono">{{ dbName }} / {{ recordKey }}</span>
+        <a-descriptions-item label="IndexedDB Record" :span="2">
+          <span class="mono">{{ dbName }} / {{ currentType.recordKey }}</span>
         </a-descriptions-item>
         <a-descriptions-item label="Subject" :span="2">
           <span class="mono">{{ result.subject }}</span>
         </a-descriptions-item>
         <a-descriptions-item label="私钥类型" :span="2">
           <a-tag color="green">不可导出（extractable=false）</a-tag>
+          <a-tag v-if="currentType.isCa" color="red" style="margin-left: 6px">CA 密钥</a-tag>
         </a-descriptions-item>
       </a-descriptions>
 
@@ -116,12 +136,16 @@
           <span>
             <a-typography-text strong>私钥</a-typography-text>
             <a-tag color="green" style="margin-left: 8px">不可导出</a-tag>
+            <a-tag v-if="currentType.isCa" color="red" style="margin-left: 4px">CA 密钥</a-tag>
           </span>
         </div>
-        <div class="secure-box">
+        <div class="secure-box" :class="{ ca: currentType.isCa }">
           🔒 私钥为不可导出 CryptoKey，已安全存储在 IndexedDB 中。
           浏览器拒绝任何 <span class="mono">exportKey()</span> 读取私钥明文的请求；
           页面仅保留 <span class="mono">sign()</span> 签名能力。无法下载 .key 文件。
+          <template v-if="currentType.isCa">
+            <br/>该密钥用于签发下级证书，请妥善保管 IndexedDB 所在浏览器配置。
+          </template>
         </div>
       </div>
 
@@ -130,11 +154,11 @@
         <div class="pem-head">
           <span>
             <a-typography-text strong>公钥 (SPKI)</a-typography-text>
-            <a-tag color="blue" style="margin-left: 8px">client-space-leaf.pub</a-tag>
+            <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.pub</a-tag>
           </span>
           <a-space>
             <a-button size="small" @click="copyText(result.publicKeyPem)">复制</a-button>
-            <a-button size="small" @click="downloadFile('client-space-leaf.pub', result.publicKeyPem)">下载</a-button>
+            <a-button size="small" @click="downloadFile(currentType.filePrefix + '.pub', result.publicKeyPem)">下载</a-button>
           </a-space>
         </div>
         <a-textarea :rows="6" :value="result.publicKeyPem" readonly class="pem-text" />
@@ -145,11 +169,11 @@
         <div class="pem-head">
           <span>
             <a-typography-text strong>CSR (PKCS#10 · SHA-384)</a-typography-text>
-            <a-tag color="blue" style="margin-left: 8px">client-space-leaf.csr</a-tag>
+            <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.csr</a-tag>
           </span>
           <a-space>
             <a-button size="small" @click="copyText(result.csrPem)">复制</a-button>
-            <a-button size="small" @click="downloadFile('client-space-leaf.csr', result.csrPem)">下载</a-button>
+            <a-button size="small" @click="downloadFile(currentType.filePrefix + '.csr', result.csrPem)">下载</a-button>
           </a-space>
         </div>
         <a-textarea :rows="7" :value="result.csrPem" readonly class="pem-text" />
@@ -158,25 +182,32 @@
       <a-divider />
 
       <a-collapse ghost>
-        <a-collapse-panel key="1" header="对应的 CA 签发命令（使用 Space 2nd-Level CA）">
-          <pre class="mono" style="margin:0; white-space:pre-wrap">openssl x509 -req \
-  -in client-space-leaf.csr \
-  -CA client-space-inter.crt \
-  -CAkey client-space-inter.key \
-  -CAcreateserial \
-  -sha384 \
-  -days 36500 \
-  -out client-space-leaf.crt \
-  -extfile client-space-leaf.ext \
-  -extensions v3_req</pre>
+        <a-collapse-panel
+          key="1"
+          :header="`对应的 CA 签发命令（${currentType.caLabel} 签发）`"
+        >
+          <a-typography-paragraph type="secondary" style="margin: 0 0 8px">
+            前置条件：CSR 与下列扩展文件保存在同一目录，签发 CA 的证书与私钥也在同一目录：
+            <span class="mono">{{ currentType.caName }}.crt</span> /
+            <span class="mono">{{ currentType.caName }}.key</span>
+          </a-typography-paragraph>
+
+          <a-typography-paragraph style="margin: 0 0 4px">
+            扩展文件 <span class="mono">{{ currentType.filePrefix }}.ext</span>：
+          </a-typography-paragraph>
+          <pre class="mono" style="margin: 0 0 12px; white-space: pre-wrap">{{ currentType.extFile }}</pre>
+
+          <a-typography-paragraph style="margin: 0 0 4px">
+            签发命令：
+          </a-typography-paragraph>
+          <pre class="mono" style="margin:0; white-space:pre-wrap">{{ signCommand }}</pre>
         </a-collapse-panel>
       </a-collapse>
 
       <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
-        注意 1：CSR 本身不携带证书扩展。签发时请使用脚本中的
-        <span class="mono">client-space-leaf.ext</span>
-        （basicConstraints=CA:FALSE、keyUsage=digitalSignature、extendedKeyUsage=clientAuth），
-        与 bash 脚本保持一致。
+        注意 1：CSR 本身不携带证书扩展。签发时请使用上方展示的
+        <span class="mono">{{ currentType.filePrefix }}.ext</span>
+        （{{ currentType.extDescription }}），与 bash 脚本保持一致。
       </a-typography-paragraph>
       <a-typography-paragraph type="secondary" style="margin: 0">
         注意 2：从 IndexedDB 加载时会用私钥<b>重新签名</b>生成新的 CSR（ECDSA 签名具有随机性），
@@ -197,6 +228,7 @@
         <b>威胁模型</b>：非导出密钥可防止私钥字节被 XSS 读取并外传；但恶意脚本仍可调用
         <span class="mono">crypto.subtle.sign()</span> 对任意数据签名（“代理签名”）。
         若你的应用需要抵抗此攻击，请使用 BFF 模式，由服务器持有私钥。
+        对于 <b>Space 1st/2nd-Level CA</b> 这类高价值密钥，更建议在离线/HSM 环境用 openssl 生成并保管。
       </a-typography-paragraph>
     </a-card>
   </div>
@@ -346,10 +378,83 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
 }
 
+// ---------------------------------------------------------------------------
+// 证书类型定义（与 bash 脚本一一对应）
+// 顺序遵循签发链：1st-Level CA → 2nd-Level CA → Leaf
+// ---------------------------------------------------------------------------
+const CERT_TYPES = {
+  'space-top': {
+    label: 'Space 1st-Level CA',
+    hint: '由 Client Broker Intermediate CA（client-broker-inter）签发，自身 CA:TRUE、pathlen:2，用于签发 Space 2nd-Level CA。对应脚本第 3 节。',
+    recordKey: 'client-space-top',
+    filePrefix: 'client-space-top',
+    subjectDefaults: {
+      C: 'JP', ST: 'Tokyo', L: '', O: 'Client', OU: '',
+      CN: 'OTMC-Client_Intermediate_4_Space_1st_level_Cert',
+    },
+    isCa: true,
+    pathLen: 2,
+    caName: 'client-broker-inter',
+    caLabel: 'Client Broker Intermediate CA',
+    extDescription: 'basicConstraints=critical,CA:TRUE,pathlen:2、keyUsage=critical,keyCertSign,cRLSign',
+    extFile: [
+      '[ v3_req ]',
+      'authorityKeyIdentifier = keyid,issuer',
+      'basicConstraints = critical, CA:TRUE, pathlen:2',
+      'keyUsage = critical, keyCertSign, cRLSign',
+      'subjectKeyIdentifier = hash',
+    ].join('\n'),
+  },
+  'space-inter': {
+    label: 'Space 2nd-Level CA',
+    hint: '由 Space 1st-Level CA（client-space-top）签发，自身 CA:TRUE、pathlen:0，用于签发 Client Leaf 终端证书。对应脚本第 4 节。',
+    recordKey: 'client-space-inter',
+    filePrefix: 'client-space-inter',
+    subjectDefaults: {
+      C: 'JP', ST: 'Tokyo', L: '', O: 'Client', OU: '',
+      CN: 'OTMC-Client_Intermediate_4_Space_2nd_level_Cert',
+    },
+    isCa: true,
+    pathLen: 0,
+    caName: 'client-space-top',
+    caLabel: 'Space 1st-Level CA',
+    extDescription: 'basicConstraints=critical,CA:TRUE,pathlen:0、keyUsage=critical,keyCertSign,cRLSign',
+    extFile: [
+      '[ v3_req ]',
+      'authorityKeyIdentifier = keyid,issuer',
+      'basicConstraints = critical, CA:TRUE, pathlen:0',
+      'keyUsage = critical, keyCertSign, cRLSign',
+      'subjectKeyIdentifier = hash',
+    ].join('\n'),
+  },
+  'client-leaf': {
+    label: 'Client Leaf',
+    hint: '由 Space 2nd-Level CA（client-space-inter）签发，用于 MQTT mTLS 客户端身份。',
+    recordKey: 'client-space-leaf',
+    filePrefix: 'client-space-leaf',
+    subjectDefaults: {
+      C: 'JP', ST: 'Tokyo', L: '', O: 'Client', OU: '',
+      CN: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert',
+    },
+    isCa: false,
+    pathLen: null,
+    caName: 'client-space-inter',
+    caLabel: 'Space 2nd-Level CA',
+    extDescription: 'basicConstraints=CA:FALSE、keyUsage=critical,digitalSignature、extendedKeyUsage=clientAuth',
+    extFile: [
+      '[ v3_req ]',
+      'basicConstraints = CA:FALSE',
+      'keyUsage = critical, digitalSignature',
+      'extendedKeyUsage = clientAuth',
+      'subjectKeyIdentifier = hash',
+      'authorityKeyIdentifier = keyid,issuer',
+    ].join('\n'),
+  },
+};
+
 const DB_NAME = 'mqtt-mtls-keystore';
 const DB_VERSION = 1;
 const STORE_NAME = 'keys';
-const RECORD_KEY = 'client-space-leaf';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -404,13 +509,18 @@ const app = createApp({
       { key: 'L',  label: 'L (Locality)',          placeholder: '(可选)' },
       { key: 'O',  label: 'O (Organization)',      placeholder: 'Client' },
       { key: 'OU', label: 'OU (Org Unit)',         placeholder: '(可选)' },
-      { key: 'CN', label: 'CN (Common Name)',      placeholder: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert' },
+      { key: 'CN', label: 'CN (Common Name)',      placeholder: '' },
     ];
 
-    const form = reactive({
-      C: 'JP', ST: 'Tokyo', L: '', O: 'Client', OU: '',
-      CN: 'OTMC-Client_Leaf_4_Space_3rd_level_Cert',
-    });
+    const typeOptions = Object.entries(CERT_TYPES).map(([value, t]) => ({
+      label: t.label,
+      value,
+    }));
+
+    const currentTypeKey = ref('client-leaf');
+    const currentType = computed(() => CERT_TYPES[currentTypeKey.value]);
+
+    const form = reactive({ ...CERT_TYPES['client-leaf'].subjectDefaults });
 
     const result = reactive({
       csrPem: '',
@@ -433,12 +543,45 @@ const app = createApp({
         .join('')
     );
 
+    const signCommand = computed(() => {
+      const t = currentType.value;
+      return `openssl x509 -req \\
+  -in ${t.filePrefix}.csr \\
+  -CA ${t.caName}.crt \\
+  -CAkey ${t.caName}.key \\
+  -CAcreateserial \\
+  -sha384 \\
+  -days 36500 \\
+  -out ${t.filePrefix}.crt \\
+  -extfile ${t.filePrefix}.ext \\
+  -extensions v3_req`;
+    });
+
     function fillFormFromAttrs(attrs) {
       if (!Array.isArray(attrs)) return;
       attrs.forEach((a) => { if (a.key in form) form[a.key] = a.value; });
     }
 
+    async function checkStored() {
+      if (!indexedDbOk.value) { hasStored.value = false; return; }
+      try {
+        const record = await dbGet(currentType.value.recordKey);
+        hasStored.value = !!(record && record.privateKey);
+      } catch (e) {
+        hasStored.value = false;
+      }
+    }
+
+    async function onTypeChange() {
+      const t = currentType.value;
+      Object.assign(form, t.subjectDefaults);
+      Object.assign(result, { csrPem: '', publicKeyPem: '', subject: '', createdAt: '' });
+      await checkStored();
+      message.info(`已切换到：${t.label}`);
+    }
+
     async function generateKeyPairAndStore() {
+      const t = currentType.value;
       const attrs = subjectFields.map((f) => ({
         key: f.key,
         value: (form[f.key] || '').trim(),
@@ -460,8 +603,11 @@ const app = createApp({
         .map((a) => `/${a.key}=${a.value}`)
         .join('');
 
-      await dbPut(RECORD_KEY, {
-        version: 2,
+      await dbPut(t.recordKey, {
+        version: 3,
+        type: t.recordKey,
+        isCa: t.isCa,
+        pathLen: t.pathLen,
         extractable: false,
         algorithm: 'ECDSA P-384 / SHA-384',
         subject,
@@ -499,7 +645,8 @@ const app = createApp({
         });
 
         hasStored.value = true;
-        message.success('非导出密钥已生成并安全存入 IndexedDB（私钥不可下载），CSR 已生成');
+        const label = currentType.value.label;
+        message.success(`${label} 非导出密钥已生成并存入 IndexedDB，CSR 已生成`);
       } catch (e) {
         console.error(e);
         message.error('生成失败：' + (e && e.message ? e.message : e));
@@ -509,11 +656,12 @@ const app = createApp({
     }
 
     async function onLoad() {
+      const t = currentType.value;
       loading.value = true;
       try {
-        const record = await dbGet(RECORD_KEY);
+        const record = await dbGet(t.recordKey);
         if (!record || !record.privateKey) {
-          message.warning('IndexedDB 中没有找到已保存的密钥');
+          message.warning(`IndexedDB 中没有找到 ${t.label} 的密钥`);
           return;
         }
 
@@ -533,7 +681,7 @@ const app = createApp({
         });
 
         hasStored.value = true;
-        message.success('已从 IndexedDB 加载密钥并重新生成 CSR 签名');
+        message.success(`已从 IndexedDB 加载 ${t.label} 密钥并重新生成 CSR 签名`);
       } catch (e) {
         console.error(e);
         message.error('加载失败：' + (e && e.message ? e.message : e));
@@ -543,14 +691,15 @@ const app = createApp({
     }
 
     async function onClear() {
+      const t = currentType.value;
       try {
-        await dbDelete(RECORD_KEY);
+        await dbDelete(t.recordKey);
         hasStored.value = false;
         Object.assign(result, {
           csrPem: '', publicKeyPem: '',
           subject: '', createdAt: '',
         });
-        message.success('已清除 IndexedDB 中的密钥');
+        message.success(`已清除 ${t.label} 的 IndexedDB 密钥`);
       } catch (e) {
         console.error(e);
         message.error('清除失败：' + (e && e.message ? e.message : e));
@@ -595,14 +744,9 @@ const app = createApp({
       }
 
       if (indexedDbOk.value) {
-        try {
-          const record = await dbGet(RECORD_KEY);
-          if (record && record.privateKey) {
-            hasStored.value = true;
-            message.info('检测到 IndexedDB 中已保存的密钥，点击“从 IndexedDB 加载”以使用');
-          }
-        } catch (e) {
-          console.warn(e);
+        await checkStored();
+        if (hasStored.value) {
+          message.info(`检测到 ${currentType.value.label} 已保存的密钥，点击“从 IndexedDB 加载”以使用`);
         }
       }
     });
@@ -610,8 +754,9 @@ const app = createApp({
     return {
       subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
       hasResult, subjectString,
-      dbName: DB_NAME, recordKey: RECORD_KEY,
-      onGenerate, onLoad, onClear,
+      typeOptions, currentTypeKey, currentType, signCommand,
+      dbName: DB_NAME,
+      onTypeChange, onGenerate, onLoad, onClear,
       copyText, downloadFile,
     };
   },
