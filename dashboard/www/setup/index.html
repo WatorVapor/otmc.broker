@@ -97,11 +97,6 @@
 
     <!-- ③ 结果 -->
     <a-card v-if="hasResult" class="section" title="③ 结果">
-      <a-alert
-        v-if="!result.csrPem"
-        type="info" show-icon style="margin-bottom: 16px"
-        message="已生成密钥对（尚未生成 CSR）。点击上方“从 IndexedDB 加载”即可用该密钥签名生成 CSR。"
-      ></a-alert>
       <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
         <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
         <a-descriptions-item label="IndexedDB Record">
@@ -513,37 +508,6 @@ const app = createApp({
       }
     }
 
-    async function onGenerateKeyOnly() {
-      if (!form.C || !form.O || !form.CN) {
-        message.warning('请至少填写 C、O、CN');
-        return;
-      }
-      if (!indexedDbOk.value) {
-        message.error('IndexedDB 不可用，无法安全存储密钥');
-        return;
-      }
-
-      loading.value = true;
-      try {
-        const { spki, subject, createdAt } = await generateKeyPairAndStore();
-
-        Object.assign(result, {
-          csrPem: '',
-          publicKeyPem: pemFromDer(spki, 'PUBLIC KEY'),
-          subject,
-          createdAt,
-        });
-
-        hasStored.value = true;
-        message.success('非导出密钥已生成并安全存入 IndexedDB（未生成 CSR）');
-      } catch (e) {
-        console.error(e);
-        message.error('生成密钥失败：' + (e && e.message ? e.message : e));
-      } finally {
-        loading.value = false;
-      }
-    }
-
     async function onLoad() {
       loading.value = true;
       try {
@@ -647,7 +611,7 @@ const app = createApp({
       subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
       hasResult, subjectString,
       dbName: DB_NAME, recordKey: RECORD_KEY,
-      onGenerate, onGenerateKeyOnly, onLoad, onClear,
+      onGenerate, onLoad, onClear,
       copyText, downloadFile,
     };
   },
