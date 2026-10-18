@@ -7,15 +7,14 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
   <style>
     html, body { margin: 0; padding: 0; }
-    body { background: #f0f2f5; }
+    body { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .page-header {
       background: #001529; color: #fff; height: 64px; padding: 0 24px;
       display: flex; align-items: center; font-size: 17px; font-weight: 600;
     }
     .page-content { max-width: 1120px; margin: 0 auto; padding: 24px; }
-    .role-card { height: 100%; display: flex; flex-direction: column; }
-    .role-card .ant-card-body { flex: 1; display: flex; flex-direction: column; }
-    .role-title { display: flex; align-items: center; gap: 8px; }
+    .role-card { height: 100%; display: flex; flex-direction: column; background: #fff; border-radius: 8px; border: 1px solid #f0f0f0; padding: 24px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.03); }
+    .role-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
     .role-icon { font-size: 18px; line-height: 1; }
     .role-list {
       margin: 8px 0 0; padding-left: 20px;
@@ -32,77 +31,76 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px; color: rgba(0, 0, 0, 0.45);
     }
+    .row-flex { display: flex; gap: 24px; flex-wrap: wrap; }
+    .col-flex { flex: 1; min-width: 300px; }
   </style>
 </head>
 <body>
 
-<div id="app">
-  <div class="page-header">OTMC Client 初始化 · 角色选择</div>
+<!-- 挂载点保持空，模板改放到 x-template 里 -->
+<div id="app"></div>
 
-  <div class="page-content">
+<!-- 模板：放在 x-template 中，Vue 会按字符串解析，自闭合标签合法 -->
+<script type="text/x-template" id="app-template">
+  <div>
+    <div class="page-header">OTMC Client 初始化 · 角色选择</div>
+    <div class="page-content">
+      <a-alert
+        type="info"
+        show-icon
+        message="请选择本机 OTMC Client 的角色"
+        description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。"
+        style="margin-bottom: 24px"
+      />
+      <div class="row-flex">
+        <div class="col-flex" v-for="role in roles" :key="role.key">
+          <div class="role-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span class="role-title">
+                <span class="role-icon">{{ role.icon }}</span>
+                <span>{{ role.title }}</span>
+              </span>
+              <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
+            </div>
 
-    <a-alert
-      type="info"
-      show-icon
-      message="请选择本机 OTMC Client 的角色"
-      description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。"
-      style="margin-bottom: 24px"
-    />
+            <p style="color: rgba(0, 0, 0, 0.88); margin-top: 0; line-height: 1.6;">{{ role.summary }}</p>
 
-    <a-row :gutter="[24, 24]">
-      <a-col :xs="24" :md="12" v-for="role in roles" :key="role.key">
-        <a-card class="role-card">
+            <span class="role-block-title">核心职责</span>
+            <ul class="role-list">
+              <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
+            </ul>
 
-          <template #title>
-            <span class="role-title">
-              <span class="role-icon">{{ role.icon }}</span>
-              <span>{{ role.title }}</span>
-            </span>
-          </template>
+            <span class="role-block-title">适用场景</span>
+            <p style="color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; line-height: 1.5;">
+              {{ role.scenario }}
+            </p>
 
-          <template #extra>
-            <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
-          </template>
+            <a-alert
+              :type="role.warnType"
+              show-icon
+              :message="role.warn"
+              style="margin-top: 16px"
+            />
 
-          <a-typography-paragraph>{{ role.summary }}</a-typography-paragraph>
-
-          <span class="role-block-title">核心职责</span>
-          <ul class="role-list">
-            <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
-          </ul>
-
-          <span class="role-block-title">适用场景</span>
-          <a-typography-paragraph type="secondary" style="margin: 4px 0 0">
-            {{ role.scenario }}
-          </a-typography-paragraph>
-
-          <a-alert
-            :type="role.warnType"
-            show-icon
-            :message="role.warn"
-            style="margin-top: 16px"
-          />
-
-          <div class="role-foot">
-            <a-button
-              type="primary"
-              size="large"
-              block
-              :href="role.href"
-            >
-              {{ role.buttonText }}
-            </a-button>
-            <span class="role-path">{{ role.href }}</span>
+            <div class="role-foot">
+              <a-button
+                type="primary"
+                size="large"
+                block
+                :href="role.href"
+              >
+                {{ role.buttonText }}
+              </a-button>
+              <span class="role-path">{{ role.href }}</span>
+            </div>
           </div>
-
-        </a-card>
-      </a-col>
-    </a-row>
-
+        </div>
+      </div>
+    </div>
   </div>
-</div>
+</script>
 
-<!-- 1. Day.js + 插件（Ant Design Vue UMD 依赖全局 dayjs，必须在 antd 之前加载） -->
+<!-- 1. Day.js 及其插件（AntD UMD 依赖全局 dayjs） -->
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js"></script>
@@ -121,10 +119,10 @@
   dayjs.extend(dayjs_plugin_quarterOfYear);
 </script>
 
-<!-- 2. Vue 3 全局构建 -->
+<!-- 2. Vue 3 全局构建（含运行时编译器） -->
 <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
 
-<!-- 3. Ant Design Vue V4 UMD（依赖上一步的全局 dayjs） -->
+<!-- 3. Ant Design Vue UMD -->
 <script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.js"></script>
 
 <!-- 4. 业务脚本 -->
@@ -132,6 +130,7 @@
 const { createApp } = Vue;
 
 const app = createApp({
+  template: '#app-template',
   setup() {
     const roles = [
       {
@@ -183,7 +182,7 @@ const app = createApp({
     ];
 
     return { roles };
-  },
+  }
 });
 
 app.use(antd);
