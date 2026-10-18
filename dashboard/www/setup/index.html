@@ -563,21 +563,85 @@ const app = createApp({
     }
 
     async function checkStored() {
-      if (!indexedDbOk.value) { hasStored.value = false; return; }
+      if (!indexedDbOk.value) { hasStored.value = false; return false; }
       try {
         const record = await dbGet(currentType.value.recordKey);
         hasStored.value = !!(record && record.privateKey);
+        return hasStored.value;
       } catch (e) {
         hasStored.value = false;
+        return false;
+      }
+    }
+
+    /**
+     * 从 IndexedDB 加载当前类型密钥并重新签名生成 CSR。
+     * @param {boolean} silent true 时不弹任何 message，仅更新状态并返回结果
+     * @returns {Promise<boolean>} 是否成功加载
+     */
+    async function loadFromDb(silent) {
+      const t = currentType.value;
+      loading.value = true;
+      try {
+        const record = await dbGet(t.recordKey);
+        if (!record || !record.privateKey) {
+          hasStored.value = false;
+          if (!silent) message.warning(`IndexedDB 中没有找到 ${t.label} 的密钥`);
+          return false;
+        }
+
+        const csrPem = await buildCsrPem(
+          record.subjectAttrs,
+          record.publicKeySpki,
+          record.privateKey
+        );
+
+        fillFormFromAttrs(record.subjectAttrs);
+
+        Object.assign(result, {
+          csrPem,
+          publicKeyPem: pemFromDer(toUint8Array(record.publicKeySpki), 'PUBLIC KEY'),
+          subject: record.subject || '',
+          createdAt: record.createdAt || '',
+        });
+
+        hasStored.value = true;
+        if (!silent) message.success(`已从 IndexedDB 加载 ${t.label} 密钥并重新生成 CSR 签名`);
+        return true;
+      } catch (e) {
+        console.error(e);
+        // 记录存在但 CryptoKey 无法使用（如浏览器重启后句柄失效）
+        if (!silent) message.error('加载失败：' + (e && e.message ? e.message : e));
+        return false;
+      } finally {
+        loading.value = false;
       }
     }
 
     async function onTypeChange() {
       const t = currentType.value;
+
+      // 1. 重置表单为当前类型的默认 Subject
       Object.assign(form, t.subjectDefaults);
+
+      // 2. 清空结果区
       Object.assign(result, { csrPem: '', publicKeyPem: '', subject: '', createdAt: '' });
-      await checkStored();
-      message.info(`已切换到：${t.label}`);
+
+      // 3. 探测该类型是否已有密钥
+      const stored = await checkStored();
+
+      if (!stored) {
+        message.info(`已切换到：${t.label}（IndexedDB 中暂无该类型密钥）`);
+        return;
+      }
+
+      // 4. 有记录则自动加载
+      const ok = await loadFromDb(true);
+      if (ok) {
+        message.success(`已切换到：${t.label}，并从 IndexedDB 自动加载密钥与 CSR`);
+      } else {
+        message.warning(`已切换到：${t.label}，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
+      }
     }
 
     async function generateKeyPairAndStore() {
@@ -656,38 +720,7 @@ const app = createApp({
     }
 
     async function onLoad() {
-      const t = currentType.value;
-      loading.value = true;
-      try {
-        const record = await dbGet(t.recordKey);
-        if (!record || !record.privateKey) {
-          message.warning(`IndexedDB 中没有找到 ${t.label} 的密钥`);
-          return;
-        }
-
-        const csrPem = await buildCsrPem(
-          record.subjectAttrs,
-          record.publicKeySpki,
-          record.privateKey
-        );
-
-        fillFormFromAttrs(record.subjectAttrs);
-
-        Object.assign(result, {
-          csrPem,
-          publicKeyPem: pemFromDer(toUint8Array(record.publicKeySpki), 'PUBLIC KEY'),
-          subject: record.subject || '',
-          createdAt: record.createdAt || '',
-        });
-
-        hasStored.value = true;
-        message.success(`已从 IndexedDB 加载 ${t.label} 密钥并重新生成 CSR 签名`);
-      } catch (e) {
-        console.error(e);
-        message.error('加载失败：' + (e && e.message ? e.message : e));
-      } finally {
-        loading.value = false;
-      }
+      await loadFromDb(false);
     }
 
     async function onClear() {
@@ -743,11 +776,17 @@ const app = createApp({
         console.warn('IndexedDB 不可用', e);
       }
 
-      if (indexedDbOk.value) {
-        await checkStored();
-        if (hasStored.value) {
-          message.info(`检测到 ${currentType.value.label} 已保存的密钥，点击“从 IndexedDB 加载”以使用`);
-        }
+      if (!indexedDbOk.value) return;
+
+      // 首屏：当前类型（默认 client-leaf）已有密钥则直接自动加载
+      const stored = await checkStored();
+      if (!stored) return;
+
+      const ok = await loadFromDb(true);
+      if (ok) {
+        message.success(`已从 IndexedDB 自动加载 ${currentType.value.label} 密钥与 CSR`);
+      } else {
+        message.warning(`检测到 ${currentType.value.label} 已保存的密钥，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
       }
     });
 
