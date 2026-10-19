@@ -1,0 +1,18 @@
+{
+  "name": "otmc-dashboard-web-page-service",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "antdv-next": "^1.7.0"
+  },
+  "devDependencies": {
+    "vite-plugin-serve-ipc": "^0.1.1"
+  }
+}
