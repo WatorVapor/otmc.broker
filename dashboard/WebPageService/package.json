@@ -7,12 +7,24 @@
   "type": "module",
   "main": "index.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "rm -f /var/run/otmc/dashboard.sock; vite --host",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "antdv-next": "^1.7.0"
+    "antdv-next": "^1.7.0",
+    "http-proxy": "^1.18.1",
+    "vue": "^3.5.44"
+  },
+  "overrides": {
+    "vite-plugin-serve-ipc": {
+      "vite": "$vite"
+    }
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.3.4",
     "vite-plugin-serve-ipc": "^0.1.1"
   }
 }

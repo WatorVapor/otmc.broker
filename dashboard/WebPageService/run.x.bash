@@ -3,7 +3,7 @@ docker run -it \
     -v $(pwd):/app \
     -v /etc/group:/etc/group:ro \
     -v /etc/passwd:/etc/passwd:ro \
-    -v /dev/shm/otmc/:/var/run/otmc/ \
+    -v /dev/shm/otmc-dashboard:/var/run/otmc \
     -v /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro \
     -v /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro \
     -v /opt/otmc-deploy/otmc.secret/broker/internal_cert:/usr/local/etc/certs/internal_cert:ro \
@@ -11,5 +11,5 @@ docker run -it \
     -v ${HOME}:${HOME} \
     --network host \
     -w /app \
-    node:26 \
-    /bin/bash
+    node:22 \
+    /bin/bash -c 'umask 000; exec /bin/bash'
