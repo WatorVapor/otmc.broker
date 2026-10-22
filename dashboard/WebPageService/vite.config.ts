@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { serveIPC } from 'vite-plugin-serve-ipc'
+import Components from 'unplugin-vue-components/vite'
+import { AntdvNextResolver } from '@antdv-next/auto-import-resolver'
 
 
 // 末尾スラッシュを削除するカスタムプラグイン
@@ -33,6 +35,10 @@ export default defineConfig({
       path: '/var/run/otmc/dashboard.sock', 
       // 如果需要兼容 Windows，可以改为对象形式：
       // path: { unix: '/tmp/antdv-dev.sock', windows: '\\\\.\\pipe\\antdv-dev' }
+    }),
+    Components({
+      resolvers: [AntdvNextResolver()],
+      dts: 'src/components.d.ts', // 自动生成组件类型声明（可选）
     }),
   ],
   server: {
