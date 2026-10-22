@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import { serveIPC } from 'vite-plugin-serve-ipc'
 import Components from 'unplugin-vue-components/vite'
 import { AntdvNextResolver } from '@antdv-next/auto-import-resolver'
+import { resolve } from 'node:path'
+
 
 
 // 末尾スラッシュを削除するカスタムプラグイン
@@ -50,6 +52,17 @@ export default defineConfig({
       host: 'otmc-dashboard.wator.xyz', // 你的外部访问域名
       clientPort: 10443,        // 你的 Nginx 监听端口
     },    
-  }
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main:       resolve(__dirname, 'index.html'),
+        setup: resolve(__dirname, 'setup/index.html'),
+        'setup/leader': resolve(__dirname, 'setup/leader/index.html'),
+        'setup/follower': resolve(__dirname, 'setup/follower/index.html'),
+        'setup/edge': resolve(__dirname, 'setup/edge/index.html'),
+      },
+    },
+  },  
 })
 
