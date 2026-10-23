@@ -3,8 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import { serveIPC } from 'vite-plugin-serve-ipc'
 import Components from 'unplugin-vue-components/vite'
 import { AntdvNextResolver } from '@antdv-next/auto-import-resolver'
-import { resolve } from 'node:path'
-
+import { dirname,resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 
 // 末尾スラッシュを削除するカスタムプラグイン

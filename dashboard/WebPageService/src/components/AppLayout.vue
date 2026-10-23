@@ -60,6 +60,7 @@ const collapsed = ref(false)
 
 /* ---------- 菜单配置：所有页面共用这一份 ---------- */
 const menuConfig = [
+  { key: 'main', title: '🏠 老家', path: '/' },
   {
     key: 'settings',
     title: '🏢 空间管理',
