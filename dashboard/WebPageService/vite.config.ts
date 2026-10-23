@@ -56,11 +56,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main:       resolve(__dirname, 'index.html'),
-        setup: resolve(__dirname, 'setup/index.html'),
-        'setup/leader': resolve(__dirname, 'setup/leader/index.html'),
-        'setup/follower': resolve(__dirname, 'setup/follower/index.html'),
-        'setup/edge': resolve(__dirname, 'setup/edge/index.html'),
+        main:                 resolve(__dirname, 'index.html'),
+        setup:                resolve(__dirname, 'setup/index.html'),
+        'setup/edge':         resolve(__dirname, 'setup/edge/index.html'),
+        'setup/leader':       resolve(__dirname, 'setup/leader/index.html'),
+        'setup/follower':     resolve(__dirname, 'setup/follower/index.html'),
       },
     },
   },  

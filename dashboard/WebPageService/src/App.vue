@@ -1,188 +1,171 @@
 <template>
-  <a-layout style="min-height: 100vh;">
-    <a-layout-sider v-model:collapsed="collapsed" collapsible :trigger="null" :width="208">
-      <div class="logo">MQTT IoT</div>
-      <a-menu theme="dark" mode="inline" :default-selected-keys="['overview']">
-        <a-menu-item key="overview">📊 实时概览</a-menu-item>
-        <a-menu-item key="connection">🔗 连接管理</a-menu-item>
-        <a-menu-item key="devices">🔌 设备列表</a-menu-item>
-        <a-menu-item key="alerts">🔔 告警中心</a-menu-item>
-      </a-menu>
-    </a-layout-sider>
+  <AppLayout page-title="MQTT 实时监控">
+    <template #header-actions>
+      <span :style="{ fontSize: '12px', color: connected ? '#52c41a' : '#bfbfbf' }">
+        <span class="live-dot" :class="connected ? 'on' : 'off'"></span>
+        {{ connected ? '已连接' : (connecting ? '连接中…' : '未连接') }}
+      </span>
+      <a-button size="small" :type="connected ? 'default' : 'primary'"
+                @click="connectMQTT" :loading="connecting">
+        {{ connected ? '重新连接' : '连接' }}
+      </a-button>
+      <a-button size="small" danger :disabled="!connected" @click="disconnectMQTT">
+        断开
+      </a-button>
+    </template>
 
-    <a-layout>
-      <a-layout-header class="site-header">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <a-button type="text" @click="collapsed = !collapsed">
-            <span v-if="collapsed">☰</span><span v-else>✕</span>
-          </a-button>
-          <span style="font-size:16px;font-weight:600;">MQTT 实时监控</span>
-          <span :style="{ fontSize: '12px', color: connected ? '#52c41a' : '#bfbfbf' }">
-            <span class="live-dot" :class="connected ? 'on' : 'off'"></span>
-            {{ connected ? '已连接' : (connecting ? '连接中…' : '未连接') }}
-          </span>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <a-button size="small" :type="connected ? 'default' : 'primary'" @click="connectMQTT" :loading="connecting">
-            {{ connected ? '重新连接' : '连接' }}
-          </a-button>
-          <a-button size="small" danger :disabled="!connected" @click="disconnectMQTT">断开</a-button>
-          <a-avatar style="background-color:#1677ff;">运</a-avatar>
-        </div>
-      </a-layout-header>
+    <a-layout-content>
+      <!-- 配置 + 日志 -->
+      <a-row :gutter="[16, 16]">
+        <a-col :xs="24" :lg="10">
+          <a-card variant="borderless" title="MQTT 连接配置">
+            <a-form layout="vertical" class="conn-form">
+              <a-form-item label="Broker WebSocket URL">
+                <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
+              </a-form-item>
+              <a-row :gutter="12">
+                <a-col :span="12">
+                  <a-form-item label="Client ID">
+                    <a-input v-model:value="connectForm.clientId"></a-input>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="订阅 Topic">
+                    <a-input v-model:value="connectForm.subTopic"></a-input>
+                  </a-form-item>
+                </a-col>
+              </a-row>
+              <a-row :gutter="12">
+                <a-col :span="12">
+                  <a-form-item label="Username（可选）">
+                    <a-input v-model:value="connectForm.username"></a-input>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="Password（可选）">
+                    <a-input-password v-model:value="connectForm.password"></a-input-password>
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </a-form>
+            <a-alert
+              type="warning"
+              show-icon
+              title="broker.emqx.io 是公共测试 Broker，所有消息公开可见，请勿发送敏感数据。"
+              style="font-size:12px;"
+            ></a-alert>
+          </a-card>
+        </a-col>
 
-      <a-layout-content>
-        <!-- 配置 + 日志 -->
-        <a-row :gutter="[16, 16]">
-          <a-col :xs="24" :lg="10">
-            <a-card variant="borderless" title="MQTT 连接配置">
-              <a-form layout="vertical" class="conn-form">
-                <a-form-item label="Broker WebSocket URL">
-                  <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
-                </a-form-item>
-                <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item label="Client ID">
-                      <a-input v-model:value="connectForm.clientId"></a-input>
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="订阅 Topic">
-                      <a-input v-model:value="connectForm.subTopic"></a-input>
-                    </a-form-item>
-                  </a-col>
-                </a-row>
-                <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item label="Username（可选）">
-                      <a-input v-model:value="connectForm.username"></a-input>
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="Password（可选）">
-                      <a-input-password v-model:value="connectForm.password"></a-input-password>
-                    </a-form-item>
-                  </a-col>
-                </a-row>
-              </a-form>
-              <a-alert
-                type="warning"
-                show-icon
-                title="broker.emqx.io 是公共测试 Broker，所有消息公开可见，请勿发送敏感数据。"
-                style="font-size:12px;"
-              ></a-alert>
-            </a-card>
-          </a-col>
-
-          <a-col :xs="24" :lg="14">
-            <a-card variant="borderless" title="消息日志">
-              <div ref="logRef" class="msg-log">
-                <div v-for="log in logs" :key="log.key">
-                  <span class="t">[{{ log.time }}]</span>
-                  <span :class="log.type === 'err' ? 'err' : ''">{{ log.text }}</span>
-                </div>
-                <div v-if="logs.length === 0" style="color:#808080;">等待 MQTT 消息…</div>
+        <a-col :xs="24" :lg="14">
+          <a-card variant="borderless" title="消息日志">
+            <div ref="logRef" class="msg-log">
+              <div v-for="log in logs" :key="log.key">
+                <span class="t">[{{ log.time }}]</span>
+                <span :class="log.type === 'err' ? 'err' : ''">{{ log.text }}</span>
               </div>
-            </a-card>
-          </a-col>
-        </a-row>
+              <div v-if="logs.length === 0" style="color:#808080;">等待 MQTT 消息…</div>
+            </div>
+          </a-card>
+        </a-col>
+      </a-row>
 
-        <!-- 统计卡片 -->
-        <a-row :gutter="[16, 16]" style="margin-top:16px;">
-          <a-col :xs="24" :sm="12" :xl="6">
-            <a-card class="stat-card" variant="borderless">
-              <div class="stat-label">在线设备</div>
-              <div class="stat-value" style="color:#52c41a;">{{ summary.online }}</div>
-            </a-card>
-          </a-col>
-          <a-col :xs="24" :sm="12" :xl="6">
-            <a-card class="stat-card" variant="borderless">
-              <div class="stat-label">离线设备</div>
-              <div class="stat-value" style="color:#ff4d4f;">{{ summary.offline }}</div>
-            </a-card>
-          </a-col>
-          <a-col :xs="24" :sm="12" :xl="6">
-            <a-card class="stat-card" variant="borderless">
-              <div class="stat-label">告警数</div>
-              <div class="stat-value" style="color:#faad14;">{{ summary.alerts }}</div>
-            </a-card>
-          </a-col>
-          <a-col :xs="24" :sm="12" :xl="6">
-            <a-card class="stat-card" variant="borderless">
-              <div class="stat-label">消息吞吐 (条/秒)</div>
-              <div class="stat-value" style="color:#1677ff;">{{ summary.throughput }}</div>
-            </a-card>
-          </a-col>
-        </a-row>
+      <!-- 统计卡片 -->
+      <a-row :gutter="[16, 16]" style="margin-top:16px;">
+        <a-col :xs="24" :sm="12" :xl="6">
+          <a-card class="stat-card" variant="borderless">
+            <div class="stat-label">在线设备</div>
+            <div class="stat-value" style="color:#52c41a;">{{ summary.online }}</div>
+          </a-card>
+        </a-col>
+        <a-col :xs="24" :sm="12" :xl="6">
+          <a-card class="stat-card" variant="borderless">
+            <div class="stat-label">离线设备</div>
+            <div class="stat-value" style="color:#ff4d4f;">{{ summary.offline }}</div>
+          </a-card>
+        </a-col>
+        <a-col :xs="24" :sm="12" :xl="6">
+          <a-card class="stat-card" variant="borderless">
+            <div class="stat-label">告警数</div>
+            <div class="stat-value" style="color:#faad14;">{{ summary.alerts }}</div>
+          </a-card>
+        </a-col>
+        <a-col :xs="24" :sm="12" :xl="6">
+          <a-card class="stat-card" variant="borderless">
+            <div class="stat-label">消息吞吐 (条/秒)</div>
+            <div class="stat-value" style="color:#1677ff;">{{ summary.throughput }}</div>
+          </a-card>
+        </a-col>
+      </a-row>
 
-        <!-- 图表 -->
-        <a-row :gutter="[16, 16]" style="margin-top:16px;">
-          <a-col :xs="24" :lg="16">
-            <a-card variant="borderless" title="实时环境数据（来自 MQTT）">
-              <div ref="lineRef" class="chart-box"></div>
-            </a-card>
-          </a-col>
-          <a-col :xs="24" :lg="8">
-            <a-card variant="borderless" title="设备在线率">
-              <div ref="donutRef" class="chart-box"></div>
-            </a-card>
-          </a-col>
-        </a-row>
+      <!-- 图表 -->
+      <a-row :gutter="[16, 16]" style="margin-top:16px;">
+        <a-col :xs="24" :lg="16">
+          <a-card variant="borderless" title="实时环境数据（来自 MQTT）">
+            <div ref="lineRef" class="chart-box"></div>
+          </a-card>
+        </a-col>
+        <a-col :xs="24" :lg="8">
+          <a-card variant="borderless" title="设备在线率">
+            <div ref="donutRef" class="chart-box"></div>
+          </a-card>
+        </a-col>
+      </a-row>
 
-        <!-- 发布 + 设备表 -->
-        <a-row :gutter="[16, 16]" style="margin-top:16px;">
-          <a-col :xs="24" :xl="8">
-            <a-card variant="borderless" title="发布控制指令">
-              <a-form layout="vertical">
-                <a-form-item label="发布 Topic">
-                  <a-input v-model:value="connectForm.pubTopic"></a-input>
-                </a-form-item>
-                <a-form-item label="Payload">
-                  <a-textarea v-model:value="pubMessage" :rows="3"></a-textarea>
-                </a-form-item>
-              </a-form>
-              <a-button type="primary" block @click="publishMessage" :disabled="!connected">
-                发布消息
-              </a-button>
-            </a-card>
-          </a-col>
+      <!-- 发布 + 设备表 -->
+      <a-row :gutter="[16, 16]" style="margin-top:16px;">
+        <a-col :xs="24" :xl="8">
+          <a-card variant="borderless" title="发布控制指令">
+            <a-form layout="vertical">
+              <a-form-item label="发布 Topic">
+                <a-input v-model:value="connectForm.pubTopic"></a-input>
+              </a-form-item>
+              <a-form-item label="Payload">
+                <a-textarea v-model:value="pubMessage" :rows="3"></a-textarea>
+              </a-form-item>
+            </a-form>
+            <a-button type="primary" block @click="publishMessage" :disabled="!connected">
+              发布消息
+            </a-button>
+          </a-card>
+        </a-col>
 
-          <a-col :xs="24" :xl="16">
-            <a-card variant="borderless" title="设备状态（来自 MQTT 消息）">
-              <a-table
-                :columns="columns"
-                :data-source="devices"
-                :pagination="false"
-                size="middle"
-                :scroll="{ x: 760 }"
-                :locale="{ emptyText: '暂无设备数据，等待 MQTT 消息…' }"
-              ></a-table>
-            </a-card>
-          </a-col>
-        </a-row>
+        <a-col :xs="24" :xl="16">
+          <a-card variant="borderless" title="设备状态（来自 MQTT 消息）">
+            <a-table
+              :columns="columns"
+              :data-source="devices"
+              :pagination="false"
+              size="middle"
+              :scroll="{ x: 760 }"
+              :locale="{ emptyText: '暂无设备数据，等待 MQTT 消息…' }"
+            ></a-table>
+          </a-card>
+        </a-col>
+      </a-row>
 
-        <!-- 告警 -->
-        <a-row :gutter="[16, 16]" style="margin-top:16px;">
-          <a-col :span="24">
-            <a-card variant="borderless" title="实时告警（来自 MQTT 消息）">
-              <div>
-                <div v-for="item in alerts" :key="item.key" class="alert-list-item">
-                  <div>
-                    <a-tag :color="levelColor(item.level)" style="margin-right:6px;">
-                      {{ levelText(item.level) }}
-                    </a-tag>
-                    <span style="font-size:13px;">{{ item.message }}</span>
-                  </div>
-                  <div style="font-size:12px;color:#8c8c8c;">{{ item.device }} · {{ item.time }}</div>
+      <!-- 告警 -->
+      <a-row :gutter="[16, 16]" style="margin-top:16px;">
+        <a-col :span="24">
+          <a-card variant="borderless" title="实时告警（来自 MQTT 消息）">
+            <div>
+              <div v-for="item in alerts" :key="item.key" class="alert-list-item">
+                <div>
+                  <a-tag :color="levelColor(item.level)" style="margin-right:6px;">
+                    {{ levelText(item.level) }}
+                  </a-tag>
+                  <span style="font-size:13px;">{{ item.message }}</span>
                 </div>
-                <div v-if="alerts.length === 0" class="alert-list-empty">暂无告警</div>
+                <div style="font-size:12px;color:#8c8c8c;">{{ item.device }} · {{ item.time }}</div>
               </div>
-            </a-card>
-          </a-col>
-        </a-row>
-      </a-layout-content>
-    </a-layout>
-  </a-layout>
+              <div v-if="alerts.length === 0" class="alert-list-empty">暂无告警</div>
+            </div>
+          </a-card>
+        </a-col>
+      </a-row>
+    </a-layout-content>
+
+  </AppLayout>
 </template>
 
 <script setup>

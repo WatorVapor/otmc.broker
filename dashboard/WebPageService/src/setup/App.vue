@@ -1,6 +1,7 @@
 <template>
-  <AppLayout>
-    <ConnectionContent />
+  <AppLayout page-title="设定一览">
+    <template #header-actions> <!-- 该页自己的操作按钮 --> </template>
+    <!-- 页面内容 -->
   </AppLayout>
 </template>
 
