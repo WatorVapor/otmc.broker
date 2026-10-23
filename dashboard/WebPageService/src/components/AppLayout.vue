@@ -68,7 +68,7 @@ const menuConfig = [
       { key: 'settings-1', title: '设定一览', path: '/setup' },
       { key: 'settings-2', title: '边缘设备', path: '/setup/edge' },
       { key: 'settings-3', title: '浏览器-空间老登', path: '/setup/leader' },
-      { key: 'settings-4', title: '浏览器-空间小伙', path: '/setup/fellower' },
+      { key: 'settings-4', title: '浏览器-空间小伙', path: '/setup/follower' },
     ],
   },
   { key: 'connection', title: '🔗 连接管理', path: '/connection' },

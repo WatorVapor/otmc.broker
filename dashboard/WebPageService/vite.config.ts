@@ -35,7 +35,7 @@ export default defineConfig({
     trailingSlashFix,
     serveIPC({
       // 在 Unix 系统下监听此 Socket 文件
-      path: '/var/run/otmc/dashboard.sock', 
+      // path: '/var/run/otmc/dashboard.sock', 
       // 如果需要兼容 Windows，可以改为对象形式：
       // path: { unix: '/tmp/antdv-dev.sock', windows: '\\\\.\\pipe\\antdv-dev' }
     }),
@@ -51,7 +51,8 @@ export default defineConfig({
     hmr: {
       protocol: 'wss',          // 强制使用 wss 协议
       host: 'otmc-dashboard.wator.xyz', // 你的外部访问域名
-      clientPort: 10443,        // 你的 Nginx 监听端口
+      clientPort: 443,        // 你的 Nginx 监听端口
+      path: '/__vite_hmr', // ← 指定 HMR WebSocket 的子路径
     },    
   },
   build: {
