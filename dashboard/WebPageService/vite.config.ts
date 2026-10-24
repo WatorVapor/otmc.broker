@@ -36,6 +36,32 @@ const unixSocketOption = {
   // path: { unix: '/tmp/antdv-dev.sock', windows: '\\\\.\\pipe\\antdv-dev' }
 }
 
+
+const cdnTags = [
+  { tag: 'link', attrs: { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.min.css' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.min.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/mqtt@5.15.1/dist/mqtt.min.js' }, injectTo: 'head-prepend' },
+  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js' }, injectTo: 'head-prepend' },
+
+]
+
+const injectCDN: Plugin = {
+  name: 'inject-cdn',
+  transformIndexHtml() {
+    return cdnTags
+  }
+}
+
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -45,6 +71,7 @@ export default defineConfig({
       resolvers: [AntdvNextResolver()],
       dts: 'src/components.d.ts', // 自动生成组件类型声明（可选）
     }),
+    injectCDN,
   ],
   server: {
     allowedHosts: ['.wator.xyz'],
@@ -59,6 +86,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      external: ['vue', 'antdv-next', 'dayjs','mqtt', 'echarts'],
       input: {
         main:                 resolve(__dirname, 'index.html'),
         setup:                resolve(__dirname, 'setup/index.html'),
@@ -66,6 +94,14 @@ export default defineConfig({
         'setup/leader':       resolve(__dirname, 'setup/leader/index.html'),
         'setup/follower':     resolve(__dirname, 'setup/follower/index.html'),
       },
+      output: {
+        // 为外部依赖提供全局变量名，指向 CDN 上的 UMD 版本
+        globals: {
+          vue: 'Vue',
+          'antdv-next': 'antd', // 关键：你的代码中 import 'antdv-next' 会被映射到全局的 antd 变量
+          dayjs: 'dayjs'
+        }
+      }      
     },
   },  
 })
