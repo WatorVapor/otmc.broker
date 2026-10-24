@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, HtmlTagDescriptor, Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { serveIPC } from 'vite-plugin-serve-ipc'
 import Components from 'unplugin-vue-components/vite'
@@ -37,29 +37,30 @@ const unixSocketOption = {
 }
 
 
-const cdnTags = [
-  { tag: 'link', attrs: { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.min.css' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.min.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/mqtt@5.15.1/dist/mqtt.min.js' }, injectTo: 'head-prepend' },
-  { tag: 'script', attrs: { src: 'https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js' }, injectTo: 'head-prepend' },
+const CDN = 'https://cdn.jsdelivr.net/npm';
 
-]
+const importMap = {
+  'vue': `${CDN}/vue@3.5.13/+esm`,
+  'dayjs': `${CDN}/dayjs@1.11.10/+esm`,
+  'antd': `${CDN}/antdv-next@1.7.0/+esm`,
+  'mqtt': `${CDN}/mqtt@5.15.1/+esm`,
+  'echarts': `${CDN}/echarts@6.1.0/+esm`,
+} as const
 
-const injectCDN: Plugin = {
-  name: 'inject-cdn',
+
+const injectImportMap: Plugin = {
+  name: 'inject-import-map',
   transformIndexHtml() {
-    return cdnTags
-  }
+    const tag: HtmlTagDescriptor = {
+      tag: 'script',
+      attrs: { type: 'importmap' },
+      children: JSON.stringify({ imports: importMap }, null, 2),
+      injectTo: 'head-prepend', // ⚠️ 关键：必须在任何 module script 之前
+    }
+    return [tag]
+  },
 }
+
 
 
 export default defineConfig({
@@ -71,7 +72,7 @@ export default defineConfig({
       resolvers: [AntdvNextResolver()],
       dts: 'src/components.d.ts', // 自动生成组件类型声明（可选）
     }),
-    injectCDN,
+    injectImportMap,
   ],
   server: {
     allowedHosts: ['.wator.xyz'],
@@ -86,7 +87,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ['vue', 'antdv-next', 'dayjs','mqtt', 'echarts'],
+      //external: ['vue', 'antdv-next', 'dayjs','mqtt', 'echarts'],
       input: {
         main:                 resolve(__dirname, 'index.html'),
         setup:                resolve(__dirname, 'setup/index.html'),
@@ -96,11 +97,13 @@ export default defineConfig({
       },
       output: {
         // 为外部依赖提供全局变量名，指向 CDN 上的 UMD 版本
+        /*
         globals: {
           vue: 'Vue',
           'antdv-next': 'antd', // 关键：你的代码中 import 'antdv-next' 会被映射到全局的 antd 变量
           dayjs: 'dayjs'
         }
+        */
       }      
     },
   },  
