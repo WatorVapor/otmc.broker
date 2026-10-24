@@ -29,16 +29,18 @@ const trailingSlashFix: Plugin = {
   },
 }
 
+const unixSocketOption = {
+  // 在 Unix 系统下监听此 Socket 文件
+  path: '/var/run/otmc/dashboard.sock', 
+  // 如果需要兼容 Windows，可以改为对象形式：
+  // path: { unix: '/tmp/antdv-dev.sock', windows: '\\\\.\\pipe\\antdv-dev' }
+}
+
 export default defineConfig({
   plugins: [
     vue(),
     trailingSlashFix,
-    serveIPC({
-      // 在 Unix 系统下监听此 Socket 文件
-      // path: '/var/run/otmc/dashboard.sock', 
-      // 如果需要兼容 Windows，可以改为对象形式：
-      // path: { unix: '/tmp/antdv-dev.sock', windows: '\\\\.\\pipe\\antdv-dev' }
-    }),
+    serveIPC(unixSocketOption),
     Components({
       resolvers: [AntdvNextResolver()],
       dts: 'src/components.d.ts', // 自动生成组件类型声明（可选）

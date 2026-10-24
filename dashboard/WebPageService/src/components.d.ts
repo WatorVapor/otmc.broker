@@ -32,5 +32,6 @@ declare module 'vue' {
     ATable: typeof import('antdv-next')['Table']
     ATag: typeof import('antdv-next')['Tag']
     ATextarea: typeof import('antdv-next')['TextArea']
+    RoleCard: typeof import('./components/RoleCard.vue')['default']
   }
 }
