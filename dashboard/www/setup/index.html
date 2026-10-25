@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OTMC Client 初始化 · 角色选择</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
+
+  <!-- antdv-next 样式 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.css" />
+
   <style>
     html, body { margin: 0; padding: 0; }
     body { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -31,16 +35,20 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px; color: rgba(0, 0, 0, 0.45);
     }
-    .row-flex { display: flex; gap: 24px; flex-wrap: wrap; }
+    .row-flex { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
+    .row-flex:last-child { margin-bottom: 0; }
     .col-flex { flex: 1; min-width: 300px; }
+    .group-label {
+      font-size: 14px; font-weight: 600; color: rgba(0, 0, 0, 0.65);
+      margin: 0 0 12px; padding-left: 4px;
+      border-left: 3px solid #1677ff;
+    }
   </style>
 </head>
 <body>
 
-<!-- 挂载点保持空，模板改放到 x-template 里 -->
 <div id="app"></div>
 
-<!-- 模板：放在 x-template 中，Vue 会按字符串解析，自闭合标签合法 -->
 <script type="text/x-template" id="app-template">
   <div>
     <div class="page-header">OTMC Client 初始化 · 角色选择</div>
@@ -52,63 +60,68 @@
         description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。"
         style="margin-bottom: 24px"
       />
-      <div class="row-flex">
-        <div class="col-flex" v-for="role in roles" :key="role.key">
-          <div class="role-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <span class="role-title">
-                <span class="role-icon">{{ role.icon }}</span>
-                <span>{{ role.title }}</span>
-              </span>
-              <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
-            </div>
 
-            <p style="color: rgba(0, 0, 0, 0.88); margin-top: 0; line-height: 1.6;">{{ role.summary }}</p>
+      <!-- 外层按组循环，每组一行 -->
+      <template v-for="group in groups" :key="group.key">
+        <div class="group-label">{{ group.label }}</div>
+        <div class="row-flex">
+          <div class="col-flex" v-for="role in group.roles" :key="role.key">
+            <div class="role-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span class="role-title">
+                  <span class="role-icon">{{ role.icon }}</span>
+                  <span>{{ role.title }}</span>
+                </span>
+                <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
+              </div>
 
-            <span class="role-block-title">核心职责</span>
-            <ul class="role-list">
-              <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
-            </ul>
+              <p style="color: rgba(0, 0, 0, 0.88); margin-top: 0; line-height: 1.6;">{{ role.summary }}</p>
 
-            <span class="role-block-title">适用场景</span>
-            <p style="color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; line-height: 1.5;">
-              {{ role.scenario }}
-            </p>
+              <span class="role-block-title">核心职责</span>
+              <ul class="role-list">
+                <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
+              </ul>
 
-            <a-alert
-              :type="role.warnType"
-              show-icon
-              :message="role.warn"
-              style="margin-top: 16px"
-            />
+              <span class="role-block-title">适用场景</span>
+              <p style="color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; line-height: 1.5;">
+                {{ role.scenario }}
+              </p>
 
-            <div class="role-foot">
-              <a-button
-                type="primary"
-                size="large"
-                block
-                :href="role.href"
-              >
-                {{ role.buttonText }}
-              </a-button>
-              <span class="role-path">{{ role.href }}</span>
+              <a-alert
+                :type="role.warnType"
+                show-icon
+                :message="role.warn"
+                style="margin-top: 16px"
+              />
+
+              <div class="role-foot">
+                <a-button
+                  type="primary"
+                  size="large"
+                  block
+                  :href="role.href"
+                >
+                  {{ role.buttonText }}
+                </a-button>
+                <span class="role-path">{{ role.href }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
   </div>
 </script>
 
-<!-- 1. Day.js 及其插件（AntD UMD 依赖全局 dayjs） -->
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js"></script>
+<!-- 1. Day.js UMD 及插件 -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/customParseFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekday.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/localeData.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekOfYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/advancedFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/quarterOfYear.js"></script>
 <script>
   dayjs.extend(dayjs_plugin_customParseFormat);
   dayjs.extend(dayjs_plugin_weekday);
@@ -119,74 +132,117 @@
   dayjs.extend(dayjs_plugin_quarterOfYear);
 </script>
 
-<!-- 2. Vue 3 全局构建（含运行时编译器） -->
-<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<!-- 2. Vue 3 全局构建 -->
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.global.prod.js"></script>
 
-<!-- 3. Ant Design Vue UMD -->
-<script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.js"></script>
+<!-- 3. antdv-next UMD -->
+<script src="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.js"></script>
 
 <!-- 4. 业务脚本 -->
 <script>
-const { createApp } = Vue;
+  const { createApp } = Vue;
 
-const app = createApp({
-  template: '#app-template',
-  setup() {
-    const roles = [
-      {
-        key: 'leader',
-        icon: '👑',
-        title: '领头者角色',
-        tag: 'Leader',
-        tagColor: 'gold',
-        href: '/setup/leader/',
-        buttonText: '进入领头者初始化',
-        summary:
-          '领头者是 OTMC Space 中信任根的建立者与维护者。它负责生成 Space 级 CA 密钥对，' +
-          '逐级签发下级 CA 证书，并为加入网络的跟随者出具终端身份证书。',
-        points: [
-          '生成 Space 1st-Level CA / 2nd-Level CA 的密钥对与 CSR',
-          '用上级 CA 签发下级 CA 证书，维护完整的信任链',
-          '为跟随者提交的 CSR 签发终端证书（clientAuth 用途）',
-          '保管根 CA 私钥，制定证书有效期与吊销策略',
-        ],
-        scenario:
-          '首次部署 OTMC Space、需要自行掌控整条证书签发链的网络拥有者或运维方。',
-        warn:
-          'CA 私钥属于高价值密钥，建议在离线环境或 HSM 中生成与保管；一旦泄露，整条信任链将失效。',
-        warnType: 'warning',
-      },
-      {
-        key: 'follower',
-        icon: '🔗',
-        title: '跟随者角色',
-        tag: 'Follower',
-        tagColor: 'blue',
-        href: '/setup/follower/',
-        buttonText: '进入跟随者初始化',
-        summary:
-          '跟随者是加入一个已经建立好的 OTMC Space 的客户端。它不持有任何 CA 私钥，' +
-          '只需生成本机终端密钥对并把 CSR 提交给领头者签发，随后凭签发的证书链以 mTLS 接入 Broker。',
-        points: [
-          '生成本机终端密钥对（不可导出）与 CSR',
-          '把 CSR 提交给所在 Space 的领头者 / 签发 CA',
-          '导入签发得到的终端证书与中间证书链',
-          '使用 mTLS 连接 MQTT Broker，仅需保管自身终端私钥',
-        ],
-        scenario:
-          '普通 MQTT 客户端节点，或证书由上级 Space / 其他团队统一签发的场景。',
-        warn:
-          '终端私钥只保存在本机浏览器存储中，清除浏览器数据后将无法恢复，需要重新申请签发。',
-        warnType: 'info',
-      },
-    ];
+  // 公共文案，避免重复
+  const leaderBase = {
+    icon: '👑',
+    tagColor: 'gold',
+    points: [
+      '生成 Space 1st-Level CA / 2nd-Level CA 的密钥对与 CSR',
+      '用上级 CA 签发下级 CA 证书，维护完整的信任链',
+      '为跟随者提交的 CSR 签发终端证书（clientAuth 用途）',
+      '保管根 CA 私钥，制定证书有效期与吊销策略',
+    ],
+    scenario:
+      '首次部署 OTMC Space、需要自行掌控整条证书签发链的网络拥有者或运维方。',
+    warn:
+      'CA 私钥属于高价值密钥，建议在离线环境或 HSM 中生成与保管；一旦泄露，整条信任链将失效。',
+    warnType: 'warning',
+  };
 
-    return { roles };
-  }
-});
+  const followerBase = {
+    icon: '🔗',
+    tagColor: 'blue',
+    points: [
+      '生成本机终端密钥对（不可导出）与 CSR',
+      '把 CSR 提交给所在 Space 的领头者 / 签发 CA',
+      '导入签发得到的终端证书与中间证书链',
+      '使用 mTLS 连接 MQTT Broker，仅需保管自身终端私钥',
+    ],
+    scenario:
+      '普通 MQTT 客户端节点，或证书由上级 Space / 其他团队统一签发的场景。',
+    warn:
+      '终端私钥只保存在本机浏览器存储中，清除浏览器数据后将无法恢复，需要重新申请签发。',
+    warnType: 'info',
+  };
 
-app.use(antd);
-app.mount('#app');
+  const app = createApp({
+    template: '#app-template',
+    setup() {
+      const groups = [
+        {
+          key: 'edge',
+          label: '边缘设备',
+          roles: [
+            {
+              key: 'edge-leader',
+              ...leaderBase,
+              title: '领头者角色 · 边缘设备',
+              tag: 'Leader edge',
+              href: '/setup/leader/',
+              buttonText: '进入领头者初始化 · 边缘设备',
+              summary:
+                '领头者是 OTMC Space 中信任根的建立者与维护者。它负责生成 Space 级 CA 密钥对，' +
+                '逐级签发下级 CA 证书，并为加入网络的跟随者出具终端身份证书。',
+            },
+            {
+              key: 'edge-follower',
+              ...followerBase,
+              title: '跟随者角色 · 边缘设备',
+              tag: 'Follower edge',
+              href: '/setup/follower/',
+              buttonText: '进入跟随者初始化 · 边缘设备',
+              summary:
+                '跟随者是加入一个已经建立好的 OTMC Space 的客户端。它不持有任何 CA 私钥，' +
+                '只需生成本机终端密钥对并把 CSR 提交给领头者签发，随后凭签发的证书链以 mTLS 接入 Broker。',
+            },
+          ],
+        },
+        {
+          key: 'browser',
+          label: '浏览器设备',
+          roles: [
+            {
+              key: 'browser-leader',
+              ...leaderBase,
+              title: '领头者角色 · 浏览器',
+              tag: 'Leader',
+              href: '/setup/leader/',
+              buttonText: '进入领头者初始化',
+              summary:
+                '领头者是 OTMC Space 中信任根的建立者与维护者。它负责生成 Space 级 CA 密钥对，' +
+                '逐级签发下级 CA 证书，并为加入网络的跟随者出具终端身份证书。',
+            },
+            {
+              key: 'browser-follower',
+              ...followerBase,
+              title: '跟随者角色 · 浏览器',
+              tag: 'Follower',
+              href: '/setup/follower/',
+              buttonText: '进入跟随者初始化',
+              summary:
+                '跟随者是加入一个已经建立好的 OTMC Space 的客户端。它不持有任何 CA 私钥，' +
+                '只需生成本机终端密钥对并把 CSR 提交给领头者签发，随后凭签发的证书链以 mTLS 接入 Broker。',
+            },
+          ],
+        },
+      ];
+
+      return { groups };
+    }
+  });
+
+  app.use(antd);
+  app.mount('#app');
 </script>
 
 </body>
