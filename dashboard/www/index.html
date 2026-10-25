@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IoT Dashboard · MQTT over WebSocket</title>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.css" />
+    <!-- antdv-next 样式（与 OTMC 页面一致） -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.css" />
 
     <style>
         html, body, #app { height: 100%; margin: 0; background: #f0f2f5; }
@@ -44,6 +45,15 @@
         .msg-log .t { color: #569cd6; }
         .msg-log .tp { color: #4ec9b0; }
         .msg-log .err { color: #f48771; }
+
+        /* 替代 List 的告警列表样式 */
+        .alert-list { padding: 0; margin: 0; list-style: none; }
+        .alert-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px;
+        }
+        .alert-item:last-child { border-bottom: none; }
+        .alert-item .meta { font-size: 12px; color: #8c8c8c; }
     </style>
 </head>
 <body>
@@ -83,7 +93,7 @@
                 <a-layout-content>
                     <a-row :gutter="[16, 16]">
                         <a-col :xs="24" :lg="10">
-                            <a-card :bordered="false" title="MQTT 连接配置">
+                            <a-card variant="borderless" title="MQTT 连接配置">
                                 <a-form layout="vertical" class="conn-form">
                                     <a-form-item label="Broker WebSocket URL">
                                         <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
@@ -116,14 +126,14 @@
                                 <a-alert
                                     type="warning"
                                     show-icon
-                                    message="broker.emqx.io 是公共测试 Broker，所有消息公开可见，请勿发送敏感数据。"
+                                    title="broker.emqx.io 是公共测试 Broker，所有消息公开可见，请勿发送敏感数据。"
                                     style="font-size:12px;"
                                 ></a-alert>
                             </a-card>
                         </a-col>
 
                         <a-col :xs="24" :lg="14">
-                            <a-card :bordered="false" title="消息日志">
+                            <a-card variant="borderless" title="消息日志">
                                 <div class="msg-log">
                                     <div v-for="log in logs" :key="log.key">
                                         <span class="t">[{{ log.time }}]</span>
@@ -141,25 +151,25 @@
 
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
                         <a-col :xs="24" :sm="12" :xl="6">
-                            <a-card class="stat-card" :bordered="false">
+                            <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">在线设备</div>
                                 <div class="stat-value" style="color:#52c41a;">{{ summary.online }}</div>
                             </a-card>
                         </a-col>
                         <a-col :xs="24" :sm="12" :xl="6">
-                            <a-card class="stat-card" :bordered="false">
+                            <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">离线设备</div>
                                 <div class="stat-value" style="color:#ff4d4f;">{{ summary.offline }}</div>
                             </a-card>
                         </a-col>
                         <a-col :xs="24" :sm="12" :xl="6">
-                            <a-card class="stat-card" :bordered="false">
+                            <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">告警数</div>
                                 <div class="stat-value" style="color:#faad14;">{{ summary.alerts }}</div>
                             </a-card>
                         </a-col>
                         <a-col :xs="24" :sm="12" :xl="6">
-                            <a-card class="stat-card" :bordered="false">
+                            <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">消息吞吐 (条/秒)</div>
                                 <div class="stat-value" style="color:#1677ff;">{{ summary.throughput }}</div>
                             </a-card>
@@ -168,12 +178,12 @@
 
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
                         <a-col :xs="24" :lg="16">
-                            <a-card :bordered="false" title="实时环境数据（来自 MQTT）">
+                            <a-card variant="borderless" title="实时环境数据（来自 MQTT）">
                                 <div ref="lineRef" class="chart-box"></div>
                             </a-card>
                         </a-col>
                         <a-col :xs="24" :lg="8">
-                            <a-card :bordered="false" title="设备在线率">
+                            <a-card variant="borderless" title="设备在线率">
                                 <div ref="donutRef" class="chart-box"></div>
                             </a-card>
                         </a-col>
@@ -181,7 +191,7 @@
 
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
                         <a-col :xs="24" :xl="8">
-                            <a-card :bordered="false" title="发布控制指令">
+                            <a-card variant="borderless" title="发布控制指令">
                                 <a-form layout="vertical">
                                     <a-form-item label="发布 Topic">
                                         <a-input v-model:value="connectForm.pubTopic"></a-input>
@@ -197,7 +207,7 @@
                         </a-col>
 
                         <a-col :xs="24" :xl="16">
-                            <a-card :bordered="false" title="设备状态（来自 MQTT 消息）">
+                            <a-card variant="borderless" title="设备状态（来自 MQTT 消息）">
                                 <a-table
                                     :columns="columns"
                                     :data-source="devices"
@@ -212,23 +222,21 @@
 
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
                         <a-col :span="24">
-                            <a-card :bordered="false" title="实时告警（来自 MQTT 消息）">
-                                <a-list size="small">
-                                    <a-list-item v-for="item in alerts" :key="item.key">
+                            <a-card variant="borderless" title="实时告警（来自 MQTT 消息）">
+                                <ul class="alert-list">
+                                    <li v-for="item in alerts" :key="item.key" class="alert-item">
                                         <div>
                                             <a-tag :color="levelColor(item.level)" style="margin-right:6px;">
                                                 {{ levelText(item.level) }}
                                             </a-tag>
-                                            <span style="font-size:13px;">{{ item.message }}</span>
+                                            <span>{{ item.message }}</span>
                                         </div>
-                                        <div style="font-size:12px;color:#8c8c8c;">
-                                            {{ item.device }} · {{ item.time }}
-                                        </div>
-                                    </a-list-item>
-                                    <a-list-item v-if="alerts.length === 0" style="color:#8c8c8c;font-size:12px;">
+                                        <span class="meta">{{ item.device }} · {{ item.time }}</span>
+                                    </li>
+                                    <li v-if="alerts.length === 0" class="alert-item" style="color:#8c8c8c;">
                                         暂无告警
-                                    </a-list-item>
-                                </a-list>
+                                    </li>
+                                </ul>
                             </a-card>
                         </a-col>
                     </a-row>
@@ -237,14 +245,18 @@
         </a-layout>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js"></script>
+    <!-- 环境变量：antdv-next 的 UMD 构建需要 -->
+    <script>window.process = { env: { NODE_ENV: 'production' } };</script>
+
+    <!-- 1. Day.js UMD 及插件（版本与 OTMC 页面一致：1.11.23） -->
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/customParseFormat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekday.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/localeData.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekOfYear.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekYear.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/advancedFormat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/quarterOfYear.js"></script>
     <script>
         dayjs.extend(dayjs_plugin_customParseFormat);
         dayjs.extend(dayjs_plugin_weekday);
@@ -255,11 +267,360 @@
         dayjs.extend(dayjs_plugin_quarterOfYear);
     </script>
 
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+    <!-- 2. Vue 3 全局构建（版本与 OTMC 页面一致：3.5.44） -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.global.prod.js"></script>
+
+    <!-- 3. IoT Dashboard 专属依赖 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.js"></script>
 
-    <script src="./main.js"></script>
+    <!-- 4. antdv-next UMD（与 OTMC 页面一致） -->
+    <script src="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.js"></script>
+
+    <!-- 5. 业务脚本 -->
+    <script>
+        const { createApp, ref, reactive, onMounted, onBeforeUnmount, h } = Vue;
+
+        const app = createApp({
+            setup() {
+                const connectForm = reactive({
+                    url: 'ws://broker.emqx.io:8083/mqtt',
+                    clientId: 'iot_dash_' + Math.random().toString(16).slice(2, 10),
+                    username: '',
+                    password: '',
+                    subTopic: 'iot/demo/sensor/data',
+                    pubTopic: 'iot/demo/sensor/control',
+                });
+
+                const connected = ref(false);
+                const connecting = ref(false);
+                let mqttClient = null;
+
+                const logs = reactive([]);
+
+                const summary = reactive({
+                    online: 0,
+                    offline: 0,
+                    alerts: 0,
+                    throughput: 0,
+                });
+
+                const timeLabels = ref([]);
+                const tempData = ref([]);
+                const humData = ref([]);
+
+                const devices = reactive([]);
+                const alerts = reactive([]);
+
+                const pubMessage = ref('{"cmd":"led","value":1}');
+
+                const statusColor = (s) => ({ online: 'green', warning: 'orange', offline: 'red' }[s] || 'default');
+                const statusText  = (s) => ({ online: '在线', warning: '告警', offline: '离线' }[s] || s);
+                const levelColor  = (l) => ({ critical: 'red', warning: 'orange', info: 'blue' }[l] || 'default');
+                const levelText   = (l) => ({ critical: '严重', warning: '警告', info: '提示' }[l] || l);
+
+                const addLog = (type, text) => {
+                    logs.push({ key: Date.now() + Math.random(), time: dayjs().format('HH:mm:ss'), type, text });
+                    if (logs.length > 200) logs.shift();
+                };
+
+                const lineRef = ref(null);
+                const donutRef = ref(null);
+                let lineChart = null;
+                let donutChart = null;
+
+                const lineOption = () => ({
+                    tooltip: { trigger: 'axis' },
+                    legend: { data: ['温度 (°C)', '湿度 (%)'], top: 0 },
+                    grid: { left: 46, right: 52, top: 44, bottom: 30 },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: timeLabels.value,
+                        axisLabel: { fontSize: 11, color: '#8c8c8c' },
+                    },
+                    yAxis: [
+                        { type: 'value', name: '°C', min: 15, max: 40, nameTextStyle: { color: '#8c8c8c' }, splitLine: { lineStyle: { type: 'dashed' } } },
+                        { type: 'value', name: '%',  min: 30, max: 80, nameTextStyle: { color: '#8c8c8c' }, splitLine: { show: false } },
+                    ],
+                    series: [
+                        {
+                            name: '温度 (°C)', type: 'line', smooth: true, symbol: 'none',
+                            data: tempData.value,
+                            lineStyle: { width: 2, color: '#fa541c' },
+                            itemStyle: { color: '#fa541c' },
+                            areaStyle: { color: 'rgba(250,84,28,0.10)' },
+                        },
+                        {
+                            name: '湿度 (%)', type: 'line', smooth: true, symbol: 'none', yAxisIndex: 1,
+                            data: humData.value,
+                            lineStyle: { width: 2, color: '#1677ff' },
+                            itemStyle: { color: '#1677ff' },
+                            areaStyle: { color: 'rgba(22,119,255,0.10)' },
+                        },
+                    ],
+                });
+
+                const donutOption = () => {
+                    const total = summary.online + summary.offline;
+                    const rate = total ? ((summary.online / total) * 100).toFixed(1) : '0.0';
+                    return {
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} 台 ({d}%)' },
+                        legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+                        title: {
+                            text: rate + '%',
+                            subtext: '在线率',
+                            left: 'center',
+                            top: '34%',
+                            textStyle: { fontSize: 26, fontWeight: 600, color: '#1f1f1f' },
+                            subtextStyle: { fontSize: 12, color: '#8c8c8c' },
+                        },
+                        series: [{
+                            type: 'pie',
+                            radius: ['58%', '78%'],
+                            center: ['50%', '44%'],
+                            avoidLabelOverlap: false,
+                            label: { show: false },
+                            labelLine: { show: false },
+                            data: [
+                                { value: summary.online || 1,  name: '在线', itemStyle: { color: '#52c41a' } },
+                                { value: summary.offline, name: '离线', itemStyle: { color: '#ff4d4f' } },
+                            ],
+                        }],
+                    };
+                };
+
+                const connectMQTT = () => {
+                    if (mqttClient) {
+                        try { mqttClient.end(true); } catch (e) {}
+                        mqttClient = null;
+                    }
+
+                    connecting.value = true;
+                    addLog('info', `正在连接 ${connectForm.url} …`);
+
+                    const options = {
+                        clean: true,
+                        connectTimeout: 8000,
+                        reconnectPeriod: 4000,
+                        clientId: connectForm.clientId,
+                    };
+                    if (connectForm.username) options.username = connectForm.username;
+                    if (connectForm.password) options.password = connectForm.password;
+
+                    mqttClient = mqtt.connect(connectForm.url, options);
+
+                    mqttClient.on('connect', () => {
+                        connected.value = true;
+                        connecting.value = false;
+                        addLog('info', 'MQTT 连接成功');
+
+                        mqttClient.subscribe(connectForm.subTopic, { qos: 0 }, (err) => {
+                            if (err) {
+                                addLog('err', `订阅失败: ${err.message}`);
+                            } else {
+                                addLog('info', `已订阅 Topic: ${connectForm.subTopic}`);
+                            }
+                        });
+                    });
+
+                    mqttClient.on('reconnect', () => {
+                        connecting.value = true;
+                        addLog('info', '正在重连 …');
+                    });
+
+                    mqttClient.on('close', () => {
+                        if (connected.value) addLog('err', 'MQTT 连接已断开');
+                        connected.value = false;
+                        connecting.value = false;
+                    });
+
+                    mqttClient.on('error', (err) => {
+                        addLog('err', `MQTT 错误: ${err.message}`);
+                        connecting.value = false;
+                    });
+
+                    mqttClient.on('message', (topic, payload) => {
+                        let text;
+                        try {
+                            text = payload.toString();
+                        } catch (e) {
+                            text = '[无法解析的 payload]';
+                        }
+
+                        addLog('recv', `[${topic}] ${text}`);
+
+                        try {
+                            const data = JSON.parse(text);
+                            handleSensorData(topic, data);
+                        } catch (e) {
+                            // 非 JSON 消息只记录
+                        }
+                    });
+                };
+
+                const disconnectMQTT = () => {
+                    if (mqttClient) {
+                        mqttClient.end(true);
+                        mqttClient = null;
+                    }
+                    connected.value = false;
+                    connecting.value = false;
+                    addLog('info', '已主动断开连接');
+                };
+
+                const handleSensorData = (topic, data) => {
+                    const now = dayjs().format('HH:mm:ss');
+
+                    const temp = data.temperature ?? data.temp ?? data.t;
+                    const hum  = data.humidity ?? data.hum ?? data.h;
+
+                    if (temp !== undefined || hum !== undefined) {
+                        timeLabels.value.push(now);
+                        tempData.value.push(temp !== undefined ? Number(temp) : null);
+                        humData.value.push(hum !== undefined ? Number(hum) : null);
+
+                        if (timeLabels.value.length > 20) {
+                            timeLabels.value.shift();
+                            tempData.value.shift();
+                            humData.value.shift();
+                        }
+
+                        if (lineChart) {
+                            lineChart.setOption({
+                                xAxis: { data: timeLabels.value },
+                                series: [{ data: tempData.value }, { data: humData.value }],
+                            });
+                        }
+
+                        summary.throughput = Math.floor(Math.random() * 50) + 50;
+                    }
+
+                    if (data.deviceId || data.device_id) {
+                        const id = data.deviceId || data.device_id;
+                        const existing = devices.find((d) => d.id === id);
+                        if (existing) {
+                            if (temp !== undefined) existing.temp = Number(temp);
+                            if (hum !== undefined) existing.hum = Number(hum);
+                            existing.lastSeen = '刚刚';
+                            existing.status = data.status || existing.status;
+                        } else {
+                            devices.push({
+                                key: id,
+                                id,
+                                type: data.type || '传感器',
+                                location: data.location || '—',
+                                status: data.status || 'online',
+                                temp: temp !== undefined ? Number(temp) : null,
+                                hum: hum !== undefined ? Number(hum) : null,
+                                lastSeen: '刚刚',
+                            });
+                        }
+                        refreshSummary();
+                    }
+
+                    if (data.alert) {
+                        alerts.unshift({
+                            key: Date.now(),
+                            level: data.alertLevel || data.alert_level || 'info',
+                            device: data.deviceId || data.device_id || '—',
+                            message: data.alert,
+                            time: now,
+                        });
+                        if (alerts.length > 20) alerts.pop();
+                        summary.alerts = alerts.length;
+                    }
+                };
+
+                const refreshSummary = () => {
+                    const total = devices.length;
+                    const online = devices.filter((d) => d.status === 'online').length;
+                    summary.online = online;
+                    summary.offline = total - online;
+                    if (donutChart) donutChart.setOption(donutOption());
+                };
+
+                const publishMessage = () => {
+                    if (!mqttClient || !connected.value) {
+                        addLog('err', '未连接，无法发布');
+                        return;
+                    }
+                    const topic = connectForm.pubTopic;
+                    mqttClient.publish(topic, pubMessage.value, { qos: 0 }, (err) => {
+                        if (err) {
+                            addLog('err', `发布失败: ${err.message}`);
+                        } else {
+                            addLog('send', `[${topic}] ${pubMessage.value}`);
+                        }
+                    });
+                };
+
+                onMounted(() => {
+                    lineChart = echarts.init(lineRef.value);
+                    lineChart.setOption(lineOption());
+
+                    donutChart = echarts.init(donutRef.value);
+                    donutChart.setOption(donutOption());
+
+                    window.addEventListener('resize', handleResize);
+                    connectMQTT();
+                });
+
+                onBeforeUnmount(() => {
+                    window.removeEventListener('resize', handleResize);
+                    if (lineChart) lineChart.dispose();
+                    if (donutChart) donutChart.dispose();
+                    if (mqttClient) mqttClient.end(true);
+                });
+
+                const handleResize = () => {
+                    if (lineChart) lineChart.resize();
+                    if (donutChart) donutChart.resize();
+                };
+
+                // antdv-next 中 Table 的 customRender 已更名为 render
+                const columns = [
+                    { title: '设备 ID', dataIndex: 'id', key: 'id', width: 110 },
+                    { title: '类型', dataIndex: 'type', key: 'type' },
+                    { title: '位置', dataIndex: 'location', key: 'location' },
+                    {
+                        title: '状态', key: 'status', width: 100,
+                        render: ({ record }) =>
+                            h(antd.Tag, { color: statusColor(record.status) }, () => statusText(record.status)),
+                    },
+                    {
+                        title: '温度', key: 'temp', width: 90,
+                        render: ({ record }) =>
+                            record.temp !== null
+                                ? `${record.temp} °C`
+                                : h('span', { style: 'color:#bfbfbf;' }, '—'),
+                    },
+                    {
+                        title: '湿度', key: 'hum', width: 90,
+                        render: ({ record }) =>
+                            record.hum !== null
+                                ? `${record.hum} %`
+                                : h('span', { style: 'color:#bfbfbf;' }, '—'),
+                    },
+                    { title: '最后心跳', dataIndex: 'lastSeen', key: 'lastSeen', width: 110 },
+                ];
+
+                return {
+                    connectForm, connected, connecting,
+                    logs, summary, devices, alerts, columns,
+                    pubMessage, lineRef, donutRef,
+                    statusColor, statusText, levelColor, levelText,
+                    connectMQTT, disconnectMQTT, publishMessage,
+                };
+            },
+
+            data() {
+                return { collapsed: false };
+            },
+        });
+
+        app.use(antd);
+        app.mount('#app');
+    </script>
 </body>
 </html>
