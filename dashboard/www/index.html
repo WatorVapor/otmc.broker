@@ -11,12 +11,21 @@
 
     <style>
         html, body, #app { height: 100%; margin: 0; background: #f0f2f5; }
+
+        /* Logo：与 OTMC 页面保持一致，折叠时只显示缩写 */
         .logo {
-            height: 32px; margin: 16px; color: #fff; font-weight: 600; font-size: 15px;
-            text-align: center; line-height: 32px; letter-spacing: 0.5px;
-            background: rgba(255, 255, 255, 0.18); border-radius: 6px;
-            white-space: nowrap; overflow: hidden;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            overflow: hidden;
         }
+
         .site-header {
             background: #fff; padding: 0 24px; display: flex; align-items: center;
             justify-content: space-between; box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
@@ -59,9 +68,16 @@
 <body>
     <div id="app">
         <a-layout style="min-height: 100vh;">
-            <a-layout-sider v-model:collapsed="collapsed" collapsible :trigger="null" :width="208">
-                <div class="logo">OTMC 面板</div>
-                <a-menu theme="dark" mode="inline" :default-selected-keys="['overview']">
+            <!-- 左侧导航：与 OTMC 页面一致的折叠方式 -->
+            <a-layout-sider
+                v-model:collapsed="collapsed"
+                collapsible
+                :trigger="null"
+                :width="208"
+                theme="dark"
+            >
+                <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
+                <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
                     <a-menu-item key="overview">
                         <a href="/" rel="noopener" style="display:block">
                             🏠 首页
@@ -73,13 +89,13 @@
                             ⚙️ 设置
                         </a>
                     </a-menu-item>
-
                 </a-menu>
             </a-layout-sider>
 
             <a-layout>
                 <a-layout-header class="site-header">
                     <div style="display:flex;align-items:center;gap:12px;">
+                        <!-- 顶部按钮：控制侧栏开合 -->
                         <a-button type="text" @click="collapsed = !collapsed">
                             <span v-if="collapsed">☰</span><span v-else>✕</span>
                         </a-button>
@@ -291,6 +307,11 @@
 
         const app = createApp({
             setup() {
+                /* ===== 侧边导航状态 ===== */
+                const collapsed = ref(false);
+                const selectedKeys = ref(['overview']); // 当前为监控面板，高亮「首页」
+
+                /* ===== MQTT 连接表单 ===== */
                 const connectForm = reactive({
                     url: 'ws://broker.emqx.io:8083/mqtt',
                     clientId: 'iot_dash_' + Math.random().toString(16).slice(2, 10),
@@ -614,16 +635,16 @@
                 ];
 
                 return {
+                    /* 侧边导航 */
+                    collapsed,
+                    selectedKeys,
+                    /* MQTT */
                     connectForm, connected, connecting,
                     logs, summary, devices, alerts, columns,
                     pubMessage, lineRef, donutRef,
                     statusColor, statusText, levelColor, levelText,
                     connectMQTT, disconnectMQTT, publishMessage,
                 };
-            },
-
-            data() {
-                return { collapsed: false };
             },
         });
 
