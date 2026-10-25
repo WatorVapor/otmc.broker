@@ -2,17 +2,61 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#001529" />
   <title>领头角色 OTMC Client 密钥与 CSR 生成器</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/reset.css" />
+
+  <!-- antdv-next 样式 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.css" />
+
   <style>
     html, body { margin: 0; padding: 0; }
-    body { background: #f0f2f5; }
-    .page-header {
-      background: #001529; color: #fff; height: 64px; padding: 0 24px;
-      display: flex; align-items: center; font-size: 17px; font-weight: 600;
+    body {
+      background: #f0f2f5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
     }
+
+    /* ===== 以下基础样式与 PC 原版完全一致 ===== */
+
+    .logo {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .page-header {
+      background: #001529;
+      color: #fff;
+      height: 64px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .page-header .collapse-btn {
+      color: #fff;
+      font-size: 18px;
+      padding: 0 8px;
+    }
+    .page-header .collapse-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
     .page-content { max-width: 1120px; margin: 0 auto; padding: 24px; }
+
     .section + .section { margin-top: 16px; }
     .pem-block + .pem-block { margin-top: 20px; }
     .pem-head {
@@ -29,300 +73,310 @@
       padding: 12px 16px; color: #135200;
     }
     .secure-box.ca { background: #fff2e8; border-color: #ffbb96; color: #612500; }
+
+    /* ===== 移动端（≤768px）覆盖样式 ===== */
+    @media (max-width: 768px) {
+      .page-header {
+        height: 56px;
+        padding: 0 8px;
+        font-size: 15px;
+        gap: 4px;
+        line-height: normal;
+      }
+      .page-header .collapse-btn {
+        font-size: 18px;
+        padding: 0 6px;
+      }
+
+      .page-content {
+        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      }
+
+      .section + .section { margin-top: 12px; }
+
+      .pem-text { font-size: 11px !important; }
+
+      /* 触摸目标更大 */
+      .ant-btn { min-height: 36px; }
+      .ant-alert { padding: 10px 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .page-header { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
 
-<div id="app">
-  <div class="page-header">
-    领头角色 OTMC Client 密钥与 CSR 生成器
-  </div>
+<div id="app"></div>
 
-  <div class="page-content">
+<script type="text/x-template" id="app-template">
+  <a-layout style="min-height: 100vh">
 
-    <a-alert
-      v-if="!cryptoOk" type="error" show-icon style="margin-bottom: 16px"
-      message="当前环境不支持 Web Crypto API（需要使用 HTTPS 或 localhost 访问）"
-    ></a-alert>
-    <a-alert
-      v-if="!indexedDbOk" type="error" show-icon style="margin-bottom: 16px"
-      message="当前环境不支持 IndexedDB，无法安全存储密钥"
-    ></a-alert>
+    <!-- 桌面端左侧菜单 -->
+    <a-layout-sider
+      v-if="!isMobile"
+      v-model:collapsed="collapsed"
+      collapsible
+      :trigger="null"
+      :width="208"
+      theme="dark"
+    >
+      <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
 
-    <!-- ① 证书类型 + Subject -->
-    <a-card class="section" title="① 证书类型与 Subject (DN)">
-      <a-segmented
-        v-model:value="currentTypeKey"
-        :options="typeOptions"
-        block
-        style="margin-bottom: 12px"
-        @change="onTypeChange"
-      />
-      <a-typography-paragraph type="secondary" style="margin: 0 0 16px">
-        {{ currentType.hint }}
-      </a-typography-paragraph>
+      <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
+        <a-menu-item key="overview">
+          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
+        </a-menu-item>
+        <a-menu-item key="setup">
+          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
+        </a-menu-item>
+      </a-menu>
+    </a-layout-sider>
 
-      <a-form layout="vertical">
-        <a-row :gutter="16">
-          <a-col :xs="24" :sm="12" :md="8" v-for="f in subjectFields" :key="f.key">
-            <a-form-item :label="f.label">
-              <a-input v-model:value="form[f.key]" :placeholder="f.placeholder" allow-clear />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
+    <!-- 移动端抽屉导航 -->
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="drawerOpen"
+      placement="left"
+      :width="230"
+      :closable="false"
+      :styles="{ body: { padding: 0, background: '#001529' } }"
+    >
+      <div class="logo">OTMC 导航</div>
+      <a-menu
+        theme="dark"
+        mode="inline"
+        :selected-keys="selectedKeys"
+        @click="drawerOpen = false"
+      >
+        <a-menu-item key="overview">
+          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
+        </a-menu-item>
+        <a-menu-item key="setup">
+          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
+        </a-menu-item>
+      </a-menu>
+    </a-drawer>
 
-      <a-descriptions :column="1" size="small" bordered>
-        <a-descriptions-item label="Subject 字符串">
-          <span class="mono">{{ subjectString || '(空)' }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="密钥算法">
-          ECDSA P-384（secp384r1）· 签名摘要 SHA-384 · 私钥不可导出
-        </a-descriptions-item>
-        <a-descriptions-item label="证书用途">
-          <a-tag v-if="currentType.pathLen !== null" color="red">
-            CA:TRUE · pathlen:{{ currentType.pathLen }} · 可签发下级证书
-          </a-tag>
-          <a-tag v-else color="blue">End-Entity · clientAuth</a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="等价 openssl">
-          <span class="mono">
-            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out {{ currentType.filePrefix }}.key
-          </span>
-        </a-descriptions-item>
-      </a-descriptions>
-    </a-card>
+    <!-- 右侧主体 -->
+    <a-layout>
+      <a-layout-header class="page-header">
+        <a-button type="text" class="collapse-btn" @click="toggleMenu">☰</a-button>
+        <span>领头角色 OTMC Client 密钥与 CSR 生成器</span>
+      </a-layout-header>
 
-    <!-- ② 生成 -->
-    <a-card class="section" title="② 生成 / 存储">
-      <a-space wrap>
-        <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
-          生成密钥对与 CSR
-        </a-button>
-        <a-button :loading="loading" :disabled="!hasStored || !indexedDbOk" @click="onLoad">
-          从 IndexedDB 加载
-        </a-button>
-        <a-button danger :disabled="(!hasStored && !hasResult) || !indexedDbOk" @click="onClear">
-          清除 IndexedDB 中的密钥
-        </a-button>
-      </a-space>
+      <a-layout-content>
+        <div class="page-content">
 
-      <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
-        ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
-        重新生成会<b>覆盖</b>当前证书类型已有的密钥，旧密钥将永久丢失，且无法恢复。
-      </a-typography-paragraph>
-    </a-card>
+          <a-alert
+            v-if="!cryptoOk" type="error" show-icon style="margin-bottom: 16px"
+            message="当前环境不支持 Web Crypto API（需要使用 HTTPS 或 localhost 访问）"
+          ></a-alert>
+          <a-alert
+            v-if="!indexedDbOk" type="error" show-icon style="margin-bottom: 16px"
+            message="当前环境不支持 IndexedDB，无法安全存储密钥"
+          ></a-alert>
 
-    <!-- ③ 结果 -->
-    <a-card v-if="hasResult" class="section" title="③ 结果">
-      <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
-        <a-descriptions-item label="证书类型">{{ currentType.label }}</a-descriptions-item>
-        <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
-        <a-descriptions-item label="IndexedDB Record" :span="2">
-          <span class="mono">{{ dbName }} / {{ currentType.recordKey }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="Subject" :span="2">
-          <span class="mono">{{ result.subject }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="私钥类型" :span="2">
-          <a-tag color="green">不可导出（extractable=false）</a-tag>
-          <a-tag v-if="currentType.isCa" color="red" style="margin-left: 6px">CA 密钥</a-tag>
-        </a-descriptions-item>
-      </a-descriptions>
+          <!-- ① 证书类型 + Subject -->
+          <a-card class="section" title="① 证书类型与 Subject (DN)">
+            <a-segmented
+              v-model:value="currentTypeKey"
+              :options="typeOptions"
+              block
+              style="margin-bottom: 12px"
+              @change="onTypeChange"
+            />
+            <a-typography-paragraph type="secondary" style="margin: 0 0 16px">
+              {{ currentType.hint }}
+            </a-typography-paragraph>
 
-      <!-- 私钥（始终不可导出） -->
-      <div class="pem-block">
-        <div class="pem-head">
-          <span>
-            <a-typography-text strong>私钥</a-typography-text>
-            <a-tag color="green" style="margin-left: 8px">不可导出</a-tag>
-            <a-tag v-if="currentType.isCa" color="red" style="margin-left: 4px">CA 密钥</a-tag>
-          </span>
-        </div>
-        <div class="secure-box" :class="{ ca: currentType.isCa }">
-          🔒 私钥为不可导出 CryptoKey，已安全存储在 IndexedDB 中。
-          浏览器拒绝任何 <span class="mono">exportKey()</span> 读取私钥明文的请求；
-          页面仅保留 <span class="mono">sign()</span> 签名能力。无法下载 .key 文件。
-          <template v-if="currentType.isCa">
-            <br/>该密钥用于签发下级证书，请妥善保管 IndexedDB 所在浏览器配置。
-          </template>
-        </div>
-      </div>
+            <a-form layout="vertical">
+              <a-row :gutter="16">
+                <a-col :xs="24" :sm="12" :md="8" v-for="f in subjectFields" :key="f.key">
+                  <a-form-item :label="f.label">
+                    <a-input v-model:value="form[f.key]" :placeholder="f.placeholder" allow-clear />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </a-form>
 
-      <!-- 公钥 -->
-      <div class="pem-block" v-if="result.publicKeyPem">
-        <div class="pem-head">
-          <span>
-            <a-typography-text strong>公钥 (SPKI)</a-typography-text>
-            <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.pub</a-tag>
-          </span>
-          <a-space>
-            <a-button size="small" @click="copyText(result.publicKeyPem)">复制</a-button>
-            <a-button size="small" @click="downloadFile(currentType.filePrefix + '.pub', result.publicKeyPem)">下载</a-button>
-          </a-space>
-        </div>
-        <a-textarea :rows="6" :value="result.publicKeyPem" readonly class="pem-text" />
-      </div>
+            <a-descriptions :column="1" size="small" bordered>
+              <a-descriptions-item label="Subject 字符串">
+                <span class="mono">{{ subjectString || '(空)' }}</span>
+              </a-descriptions-item>
+              <a-descriptions-item label="密钥算法">
+                ECDSA P-384（secp384r1）· 签名摘要 SHA-384 · 私钥不可导出
+              </a-descriptions-item>
+              <a-descriptions-item label="证书用途">
+                <a-tag v-if="currentType.pathLen !== null" color="red">
+                  CA:TRUE · pathlen:{{ currentType.pathLen }} · 可签发下级证书
+                </a-tag>
+                <a-tag v-else color="blue">End-Entity · clientAuth</a-tag>
+              </a-descriptions-item>
+              <a-descriptions-item label="等价 openssl">
+                <span class="mono">
+                  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out {{ currentType.filePrefix }}.key
+                </span>
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-card>
 
-      <!-- CSR -->
-      <div class="pem-block" v-if="result.csrPem">
-        <div class="pem-head">
-          <span>
-            <a-typography-text strong>CSR (PKCS#10 · SHA-384)</a-typography-text>
-            <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.csr</a-tag>
-          </span>
-          <a-space>
-            <a-button size="small" @click="copyText(result.csrPem)">复制</a-button>
-            <a-button size="small" @click="downloadFile(currentType.filePrefix + '.csr', result.csrPem)">下载</a-button>
-          </a-space>
-        </div>
-        <a-textarea :rows="7" :value="result.csrPem" readonly class="pem-text" />
-      </div>
-
-      <a-divider />
-
-      <a-collapse ghost>
-        <a-collapse-panel
-          key="1"
-          :header="`对应的 CA 签发命令（${currentType.caLabel} 签发）`"
-        >
-          <a-typography-paragraph type="secondary" style="margin: 0 0 8px">
-            前置条件：CSR 与下列扩展文件保存在同一目录，签发 CA 的证书与私钥也在同一目录：
-            <span class="mono">{{ currentType.caName }}.crt</span> /
-            <span class="mono">{{ currentType.caName }}.key</span>
-          </a-typography-paragraph>
-
-          <a-typography-paragraph style="margin: 0 0 4px">
-            扩展文件 <span class="mono">{{ currentType.filePrefix }}.ext</span>：
-          </a-typography-paragraph>
-          <pre class="mono" style="margin: 0 0 12px; white-space: pre-wrap">{{ currentType.extFile }}</pre>
-
-          <a-typography-paragraph style="margin: 0 0 4px">
-            签发命令：
-          </a-typography-paragraph>
-          <pre class="mono" style="margin:0; white-space:pre-wrap">{{ signCommand }}</pre>
-        </a-collapse-panel>
-      </a-collapse>
-
-      <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
-        注意 1：CSR 本身不携带证书扩展。签发时请使用上方展示的
-        <span class="mono">{{ currentType.filePrefix }}.ext</span>
-        （{{ currentType.extDescription }}），与 bash 脚本保持一致。
-      </a-typography-paragraph>
-      <a-typography-paragraph type="secondary" style="margin: 0">
-        注意 2：从 IndexedDB 加载时会用私钥<b>重新签名</b>生成新的 CSR（ECDSA 签名具有随机性），
-        Subject 与公钥保持不变，新旧 CSR 均可被 CA 签发为等效证书。
-      </a-typography-paragraph>
-    </a-card>
-
-    <a-card v-if="apiAvailable && hasResult" class="section" title="④ 申请证书（服务器端签发）">
-      <a-alert
-        type="info" show-icon style="margin-bottom: 16px"
-        message="本操作将 CSR 提交至签名 API，由服务端使用 Client Broker Intermediate CA 私钥签发。"
-        description="浏览器不接触签发私钥；响应证书会在本地校验公钥与私钥是否匹配。"
-      ></a-alert>
-
-      <a-form layout="vertical">
-        <a-row :gutter="16">
-          <a-col :xs="24" :md="14">
-            <a-form-item label="签名 API 地址">
-              <a-input v-model:value="apiConfig.url" placeholder="https://api.example.com/v1/sign-ca" @blur="saveApiConfig" />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="10">
-            <a-form-item label="访问令牌 (Bearer)">
-              <a-input-password v-model:value="apiConfig.token" placeholder="短期令牌，仅存于 sessionStorage" @blur="saveApiConfig" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
-
-      <a-space wrap style="margin-bottom: 12px">
-        <a-button type="primary" :loading="applying" :disabled="!apiReady" @click="applyCertificate">
-          提交 CSR 申请证书
-        </a-button>
-        <a-button :disabled="!certResult.certificatePem" @click="downloadFile(currentType.filePrefix + '.crt', certResult.certificatePem)">
-          下载证书 (.crt)
-        </a-button>
-        <a-button :disabled="!certResult.chainPem.length" @click="downloadFile(currentType.filePrefix + '-chain.pem', certResult.chainPem.join('\n'))">
-          下载 CA 链
-        </a-button>
-      </a-space>
-
-      <template v-if="certResult.certificatePem">
-        <a-alert
-          :type="certResult.verifyOk ? 'success' : 'error'" show-icon style="margin-bottom: 12px"
-          :message="certResult.verifyOk ? '本地公钥匹配校验通过' : '本地公钥匹配校验失败'"
-        >
-          <template #description>
-            <div v-if="certResult.verifyOk">
-              证书 SPKI 的 SHA-256：<span class="mono">{{ certResult.certSpkiSha256 }}</span>
-            </div>
-            <ul v-else style="margin:0; padding-left:18px">
-              <li v-for="(i, idx) in certResult.verifyIssues" :key="idx">{{ i }}</li>
-            </ul>
-          </template>
-        </a-alert>
-
-        <a-descriptions :column="2" size="small" bordered style="margin-bottom: 12px">
-          <a-descriptions-item label="Serial" :span="2"><span class="mono">{{ certResult.serial || '-' }}</span></a-descriptions-item>
-          <a-descriptions-item label="Issuer CN" :span="2"><span class="mono">{{ certResult.issuerCN || '-' }}</span></a-descriptions-item>
-          <a-descriptions-item label="Not Before">{{ certResult.notBefore || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="Not After">{{ certResult.notAfter || '-' }}</a-descriptions-item>
-        </a-descriptions>
-
-        <div class="pem-block">
-          <div class="pem-head">
-            <span><a-typography-text strong>证书 (PEM)</a-typography-text></span>
-            <a-space>
-              <a-button size="small" @click="copyText(certResult.certificatePem)">复制</a-button>
+          <!-- ② 生成 -->
+          <a-card class="section" title="② 生成 / 存储">
+            <a-space wrap>
+              <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
+                生成密钥对与 CSR
+              </a-button>
+              <a-button :loading="loading" :disabled="!hasStored || !indexedDbOk" @click="onLoad">
+                从 IndexedDB 加载
+              </a-button>
+              <a-button danger :disabled="(!hasStored && !hasResult) || !indexedDbOk" @click="onClear">
+                清除 IndexedDB 中的密钥
+              </a-button>
             </a-space>
-          </div>
-          <a-textarea :rows="7" :value="certResult.certificatePem" readonly class="pem-text" />
+
+            <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
+              ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
+              重新生成会<b>覆盖</b>当前证书类型已有的密钥，旧密钥将永久丢失，且无法恢复。
+            </a-typography-paragraph>
+          </a-card>
+
+          <!-- ③ 结果 -->
+          <a-card v-if="hasResult" class="section" title="③ 结果">
+            <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
+              <a-descriptions-item label="证书类型">{{ currentType.label }}</a-descriptions-item>
+              <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
+              <a-descriptions-item label="IndexedDB Record" :span="2">
+                <span class="mono">{{ dbName }} / {{ currentType.recordKey }}</span>
+              </a-descriptions-item>
+              <a-descriptions-item label="Subject" :span="2">
+                <span class="mono">{{ result.subject }}</span>
+              </a-descriptions-item>
+              <a-descriptions-item label="私钥类型" :span="2">
+                <a-tag color="green">不可导出（extractable=false）</a-tag>
+                <a-tag v-if="currentType.isCa" color="red" style="margin-left: 6px">CA 密钥</a-tag>
+              </a-descriptions-item>
+            </a-descriptions>
+
+            <!-- 私钥（始终不可导出） -->
+            <div class="pem-block">
+              <div class="pem-head">
+                <span>
+                  <a-typography-text strong>私钥</a-typography-text>
+                  <a-tag color="green" style="margin-left: 8px">不可导出</a-tag>
+                  <a-tag v-if="currentType.isCa" color="red" style="margin-left: 4px">CA 密钥</a-tag>
+                </span>
+              </div>
+              <div class="secure-box" :class="{ ca: currentType.isCa }">
+                🔒 私钥为不可导出 CryptoKey，已安全存储在 IndexedDB 中。
+                浏览器拒绝任何 <span class="mono">exportKey()</span> 读取私钥明文的请求；
+                页面仅保留 <span class="mono">sign()</span> 签名能力。无法下载 .key 文件。
+                <template v-if="currentType.isCa">
+                  <br/>该密钥用于签发下级证书，请妥善保管 IndexedDB 所在浏览器配置。
+                </template>
+              </div>
+            </div>
+
+            <!-- 公钥 -->
+            <div class="pem-block" v-if="result.publicKeyPem">
+              <div class="pem-head">
+                <span>
+                  <a-typography-text strong>公钥 (SPKI)</a-typography-text>
+                  <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.pub</a-tag>
+                </span>
+                <a-space>
+                  <a-button size="small" @click="copyText(result.publicKeyPem)">复制</a-button>
+                  <a-button size="small" @click="downloadFile(currentType.filePrefix + '.pub', result.publicKeyPem)">下载</a-button>
+                </a-space>
+              </div>
+              <a-textarea :rows="6" :value="result.publicKeyPem" readonly class="pem-text" />
+            </div>
+
+            <!-- CSR -->
+            <div class="pem-block" v-if="result.csrPem">
+              <div class="pem-head">
+                <span>
+                  <a-typography-text strong>CSR (PKCS#10 · SHA-384)</a-typography-text>
+                  <a-tag color="blue" style="margin-left: 8px">{{ currentType.filePrefix }}.csr</a-tag>
+                </span>
+                <a-space>
+                  <a-button size="small" @click="copyText(result.csrPem)">复制</a-button>
+                  <a-button size="small" @click="downloadFile(currentType.filePrefix + '.csr', result.csrPem)">下载</a-button>
+                </a-space>
+              </div>
+              <a-textarea :rows="7" :value="result.csrPem" readonly class="pem-text" />
+            </div>
+
+            <a-divider />
+
+            <a-collapse ghost>
+              <a-collapse-panel
+                key="1"
+                :header="`对应的 CA 签发命令（${currentType.caLabel} 签发）`"
+              >
+                <a-typography-paragraph type="secondary" style="margin: 0 0 8px">
+                  前置条件：CSR 与下列扩展文件保存在同一目录，签发 CA 的证书与私钥也在同一目录：
+                  <span class="mono">{{ currentType.caName }}.crt</span> /
+                  <span class="mono">{{ currentType.caName }}.key</span>
+                </a-typography-paragraph>
+
+                <a-typography-paragraph style="margin: 0 0 4px">
+                  扩展文件 <span class="mono">{{ currentType.filePrefix }}.ext</span>：
+                </a-typography-paragraph>
+                <pre class="mono" style="margin: 0 0 12px; white-space: pre-wrap">{{ currentType.extFile }}</pre>
+
+                <a-typography-paragraph style="margin: 0 0 4px">
+                  签发命令：
+                </a-typography-paragraph>
+                <pre class="mono" style="margin:0; white-space:pre-wrap">{{ signCommand }}</pre>
+              </a-collapse-panel>
+            </a-collapse>
+
+            <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
+              注意 1：CSR 本身不携带证书扩展。签发时请使用上方展示的
+              <span class="mono">{{ currentType.filePrefix }}.ext</span>
+              （{{ currentType.extDescription }}），与 bash 脚本保持一致。
+            </a-typography-paragraph>
+            <a-typography-paragraph type="secondary" style="margin: 0">
+              注意 2：从 IndexedDB 加载时会用私钥<b>重新签名</b>生成新的 CSR（ECDSA 签名具有随机性），
+              Subject 与公钥保持不变，新旧 CSR 均可被 CA 签发为等效证书。
+            </a-typography-paragraph>
+          </a-card>
+
+          <!-- ④ 安全说明 -->
+          <a-card class="section" title="④ 关于此安全方案的边界说明">
+            <a-typography-paragraph>
+              <b>适用场景</b>：私钥仅需在<b>当前浏览器内</b>完成签名操作，且不需要将 .key 文件分发给其他 MQTT 客户端。
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              <b>不适用场景</b>：需要把私钥交给 mosquitto_pub、mqtt.js（Node）、ESP32 等外部 MQTT 客户端。
+              本页面不提供私钥导出能力；这类场景请在服务器侧用 openssl 生成私钥与 CSR。
+            </a-typography-paragraph>
+            <a-typography-paragraph type="danger" style="margin-bottom: 0">
+              <b>威胁模型</b>：非导出密钥可防止私钥字节被 XSS 读取并外传；但恶意脚本仍可调用
+              <span class="mono">crypto.subtle.sign()</span> 对任意数据签名（“代理签名”）。
+              若你的应用需要抵抗此攻击，请使用 BFF 模式，由服务器持有私钥。
+              对于 <b>Space 1st/2nd-Level CA</b> 这类高价值密钥，更建议在离线/HSM 环境用 openssl 生成并保管。
+            </a-typography-paragraph>
+          </a-card>
+
         </div>
+      </a-layout-content>
+    </a-layout>
 
-        <div class="pem-block" v-if="certResult.chainPem.length">
-          <div class="pem-head">
-            <span><a-typography-text strong>CA 链 (PEM)</a-typography-text></span>
-          </div>
-          <a-textarea :rows="6" :value="certResult.chainPem.join('\n')" readonly class="pem-text" />
-        </div>
-
-        <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
-          完整信任链验证请执行：
-          <span class="mono">openssl verify -CAfile {{ currentType.caName }}.crt {{ currentType.filePrefix }}.crt</span>
-        </a-typography-paragraph>
-      </template>
-    </a-card>
-
-    <!-- ⑤ 安全说明 -->
-    <a-card class="section" title="④ 关于此安全方案的边界说明">
-      <a-typography-paragraph>
-        <b>适用场景</b>：私钥仅需在<b>当前浏览器内</b>完成签名操作，且不需要将 .key 文件分发给其他 MQTT 客户端。
-      </a-typography-paragraph>
-      <a-typography-paragraph>
-        <b>不适用场景</b>：需要把私钥交给 mosquitto_pub、mqtt.js（Node）、ESP32 等外部 MQTT 客户端。
-        本页面不提供私钥导出能力；这类场景请在服务器侧用 openssl 生成私钥与 CSR。
-      </a-typography-paragraph>
-      <a-typography-paragraph type="danger" style="margin-bottom: 0">
-        <b>威胁模型</b>：非导出密钥可防止私钥字节被 XSS 读取并外传；但恶意脚本仍可调用
-        <span class="mono">crypto.subtle.sign()</span> 对任意数据签名（“代理签名”）。
-        若你的应用需要抵抗此攻击，请使用 BFF 模式，由服务器持有私钥。
-        对于 <b>Space 1st/2nd-Level CA</b> 这类高价值密钥，更建议在离线/HSM 环境用 openssl 生成并保管。
-      </a-typography-paragraph>
-    </a-card>
-  </div>
-</div>
+  </a-layout>
+</script>
 
 <!-- 1. Day.js + 插件 -->
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekday.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/localeData.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekYear.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/advancedFormat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/quarterOfYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/customParseFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekday.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/localeData.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekOfYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekYear.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/advancedFormat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/quarterOfYear.js"></script>
 <script>
   dayjs.extend(dayjs_plugin_customParseFormat);
   dayjs.extend(dayjs_plugin_weekday);
@@ -334,15 +388,22 @@
 </script>
 
 <!-- 2. Vue 3 全局构建 -->
-<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.global.prod.js"></script>
 
-<!-- 3. Ant Design Vue V4 UMD -->
-<script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.2.6/dist/antd.min.js"></script>
+<!-- 3. antdv-next UMD -->
+<script src="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.js"></script>
 
 <!-- 4. 业务脚本 -->
 <script>
-const { createApp, reactive, ref, computed, onMounted } = Vue;
-const { message } = antd;
+const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
+
+// antdv-next 可能不暴露 message，做防御性降级
+const message = (antd && antd.message) || {
+  success: (m) => console.log('[success]', m),
+  error: (m) => console.error('[error]', m),
+  warning: (m) => console.warn('[warning]', m),
+  info: (m) => console.info('[info]', m),
+};
 
 const textEncoder = new TextEncoder();
 
@@ -460,7 +521,6 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
 
 // ---------------------------------------------------------------------------
 // 证书类型定义（与 bash 脚本一一对应）
-// 顺序遵循签发链：1st-Level CA → 2nd-Level CA → Leaf
 // ---------------------------------------------------------------------------
 const CERT_TYPES = {
   'space-top': {
@@ -582,7 +642,47 @@ async function dbDelete(key) {
 }
 
 const app = createApp({
+  template: '#app-template',
   setup() {
+    /* ===== 响应式断点（仅 ≤768px 触发） ===== */
+    const mqMobile = window.matchMedia('(max-width: 768px)');
+    const isMobile = ref(mqMobile.matches);
+
+    /* ===== 导航状态 ===== */
+    const collapsed = ref(false);
+    const drawerOpen = ref(false);
+    const selectedKeys = ref(['setup']);
+
+    const toggleMenu = () => {
+      if (isMobile.value) {
+        drawerOpen.value = !drawerOpen.value;
+      } else {
+        collapsed.value = !collapsed.value;
+      }
+    };
+
+    const onMediaChange = (e) => {
+      isMobile.value = e.matches;
+      if (!e.matches) drawerOpen.value = false;
+    };
+
+    onMounted(() => {
+      if (mqMobile.addEventListener) {
+        mqMobile.addEventListener('change', onMediaChange);
+      } else if (mqMobile.addListener) {
+        mqMobile.addListener(onMediaChange);
+      }
+    });
+
+    onBeforeUnmount(() => {
+      if (mqMobile.removeEventListener) {
+        mqMobile.removeEventListener('change', onMediaChange);
+      } else if (mqMobile.removeListener) {
+        mqMobile.removeListener(onMediaChange);
+      }
+    });
+
+    /* ===== 表单与证书类型 ===== */
     const subjectFields = [
       { key: 'C',  label: 'C (Country)',          placeholder: 'JP' },
       { key: 'ST', label: 'ST (State / Province)', placeholder: 'Tokyo' },
@@ -654,11 +754,6 @@ const app = createApp({
       }
     }
 
-    /**
-     * 从 IndexedDB 加载当前类型密钥并重新签名生成 CSR。
-     * @param {boolean} silent true 时不弹任何 message，仅更新状态并返回结果
-     * @returns {Promise<boolean>} 是否成功加载
-     */
     async function loadFromDb(silent) {
       const t = currentType.value;
       loading.value = true;
@@ -690,7 +785,6 @@ const app = createApp({
         return true;
       } catch (e) {
         console.error(e);
-        // 记录存在但 CryptoKey 无法使用（如浏览器重启后句柄失效）
         if (!silent) message.error('加载失败：' + (e && e.message ? e.message : e));
         return false;
       } finally {
@@ -701,13 +795,9 @@ const app = createApp({
     async function onTypeChange() {
       const t = currentType.value;
 
-      // 1. 重置表单为当前类型的默认 Subject
       Object.assign(form, t.subjectDefaults);
-
-      // 2. 清空结果区
       Object.assign(result, { csrPem: '', publicKeyPem: '', subject: '', createdAt: '' });
 
-      // 3. 探测该类型是否已有密钥
       const stored = await checkStored();
 
       if (!stored) {
@@ -715,7 +805,6 @@ const app = createApp({
         return;
       }
 
-      // 4. 有记录则自动加载
       const ok = await loadFromDb(true);
       if (ok) {
         message.success(`已切换到：${t.label}，并从 IndexedDB 自动加载密钥与 CSR`);
@@ -858,7 +947,6 @@ const app = createApp({
 
       if (!indexedDbOk.value) return;
 
-      // 首屏：当前类型（默认 client-leaf）已有密钥则直接自动加载
       const stored = await checkStored();
       if (!stored) return;
 
@@ -871,6 +959,9 @@ const app = createApp({
     });
 
     return {
+      // 布局 / 导航
+      isMobile, collapsed, drawerOpen, selectedKeys, toggleMenu,
+      // 表单
       subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
       hasResult, subjectString,
       typeOptions, currentTypeKey, currentType, signCommand,
