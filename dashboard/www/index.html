@@ -60,12 +60,20 @@
     <div id="app">
         <a-layout style="min-height: 100vh;">
             <a-layout-sider v-model:collapsed="collapsed" collapsible :trigger="null" :width="208">
-                <div class="logo">MQTT IoT</div>
+                <div class="logo">OTMC 面板</div>
                 <a-menu theme="dark" mode="inline" :default-selected-keys="['overview']">
-                    <a-menu-item key="overview">📊 实时概览</a-menu-item>
-                    <a-menu-item key="connection">🔗 连接管理</a-menu-item>
-                    <a-menu-item key="devices">🔌 设备列表</a-menu-item>
-                    <a-menu-item key="alerts">🔔 告警中心</a-menu-item>
+                    <a-menu-item key="overview">
+                        <a href="/" rel="noopener" style="display:block">
+                            🏠 首页
+                        </a>
+                    </a-menu-item>
+
+                    <a-menu-item key="setup">
+                        <a href="/setup" rel="noopener" style="display:block">
+                            ⚙️ 设置
+                        </a>
+                    </a-menu-item>
+
                 </a-menu>
             </a-layout-sider>
 

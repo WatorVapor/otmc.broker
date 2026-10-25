@@ -11,13 +11,55 @@
 
   <style>
     html, body { margin: 0; padding: 0; }
-    body { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    .page-header {
-      background: #001529; color: #fff; height: 64px; padding: 0 24px;
-      display: flex; align-items: center; font-size: 17px; font-weight: 600;
+    body {
+      background: #f0f2f5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+
+    /* 侧边栏 Logo */
+    .logo {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    /* 顶部栏（放在 a-layout-header 里） */
+    .page-header {
+      background: #001529;
+      color: #fff;
+      height: 64px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .page-header .collapse-btn {
+      color: #fff;
+      font-size: 18px;
+      padding: 0 8px;
+    }
+    .page-header .collapse-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* 内容区 */
     .page-content { max-width: 1120px; margin: 0 auto; padding: 24px; }
-    .role-card { height: 100%; display: flex; flex-direction: column; background: #fff; border-radius: 8px; border: 1px solid #f0f0f0; padding: 24px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.03); }
+
+    .role-card {
+      height: 100%; display: flex; flex-direction: column;
+      background: #fff; border-radius: 8px; border: 1px solid #f0f0f0;
+      padding: 24px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.03);
+    }
     .role-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
     .role-icon { font-size: 18px; line-height: 1; }
     .role-list {
@@ -35,6 +77,7 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px; color: rgba(0, 0, 0, 0.45);
     }
+
     .row-flex { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
     .row-flex:last-child { margin-bottom: 0; }
     .col-flex { flex: 1; min-width: 300px; }
@@ -50,68 +93,100 @@
 <div id="app"></div>
 
 <script type="text/x-template" id="app-template">
-  <div>
-    <div class="page-header">OTMC 设定角色选择</div>
-    <div class="page-content">
-      <a-alert
-        type="info"
-        show-icon
-        message="OTMC角色分类"
-        description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。
-        边缘设备主要是指运行linux的终端系统，和OTMC服务器通过TCP或者QUIC的MQTT连接，浏览器设备主要是运行的Chrome等浏览器上，主要通过websocket的MQTT连接"
-        style="margin-bottom: 24px"
-      />
+  <!-- 关键：Sider 必须放在 a-layout 内部 -->
+  <a-layout style="min-height: 100vh">
 
-      <!-- 外层按组循环，每组一行 -->
-      <template v-for="group in groups" :key="group.key">
-        <div class="group-label">{{ group.label }}</div>
-        <div class="row-flex">
-          <div class="col-flex" v-for="role in group.roles" :key="role.key">
-            <div class="role-card">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <span class="role-title">
-                  <span class="role-icon">{{ role.icon }}</span>
-                  <span>{{ role.title }}</span>
-                </span>
-                <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
-              </div>
+    <!-- 左侧菜单 -->
+    <a-layout-sider
+      v-model:collapsed="collapsed"
+      collapsible
+      :trigger="null"
+      :width="208"
+      theme="dark"
+    >
+      <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
 
-              <p style="color: rgba(0, 0, 0, 0.88); margin-top: 0; line-height: 1.6;">{{ role.summary }}</p>
+      <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
+        <a-menu-item key="overview">
+          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
+        </a-menu-item>
+        <a-menu-item key="setup">
+          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
+        </a-menu-item>
+      </a-menu>
+    </a-layout-sider>
 
-              <span class="role-block-title">核心职责</span>
-              <ul class="role-list">
-                <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
-              </ul>
+    <!-- 右侧主体 -->
+    <a-layout>
+      <a-layout-header class="page-header">
+        <a-button type="text" class="collapse-btn" @click="collapsed = !collapsed">☰</a-button>
+        <span>OTMC 设定角色选择</span>
+      </a-layout-header>
 
-              <span class="role-block-title">适用场景</span>
-              <p style="color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; line-height: 1.5;">
-                {{ role.scenario }}
-              </p>
+      <a-layout-content>
+        <div class="page-content">
+          <a-alert
+            type="info"
+            show-icon
+            message="OTMC角色分类"
+            description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。
+            边缘设备主要是指运行linux的终端系统，和OTMC服务器通过TCP或者QUIC的MQTT连接，浏览器设备主要是运行的Chrome等浏览器上，主要通过websocket的MQTT连接"
+            style="margin-bottom: 24px"
+          />
 
-              <a-alert
-                :type="role.warnType"
-                show-icon
-                :message="role.warn"
-                style="margin-top: 16px"
-              />
+          <!-- 外层按组循环，每组一行 -->
+          <template v-for="group in groups" :key="group.key">
+            <div class="group-label">{{ group.label }}</div>
+            <div class="row-flex">
+              <div class="col-flex" v-for="role in group.roles" :key="role.key">
+                <div class="role-card">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span class="role-title">
+                      <span class="role-icon">{{ role.icon }}</span>
+                      <span>{{ role.title }}</span>
+                    </span>
+                    <a-tag :color="role.tagColor">{{ role.tag }}</a-tag>
+                  </div>
 
-              <div class="role-foot">
-                <a-button
-                  type="primary"
-                  size="large"
-                  block
-                  :href="role.href"
-                >
-                  {{ role.buttonText }}
-                </a-button>
-                <span class="role-path">{{ role.href }}</span>
+                  <p style="color: rgba(0, 0, 0, 0.88); margin-top: 0; line-height: 1.6;">{{ role.summary }}</p>
+
+                  <span class="role-block-title">核心职责</span>
+                  <ul class="role-list">
+                    <li v-for="(p, i) in role.points" :key="i">{{ p }}</li>
+                  </ul>
+
+                  <span class="role-block-title">适用场景</span>
+                  <p style="color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; line-height: 1.5;">
+                    {{ role.scenario }}
+                  </p>
+
+                  <a-alert
+                    :type="role.warnType"
+                    show-icon
+                    :message="role.warn"
+                    style="margin-top: 16px"
+                  />
+
+                  <div class="role-foot">
+                    <a-button
+                      type="primary"
+                      size="large"
+                      block
+                      :href="role.href"
+                    >
+                      {{ role.buttonText }}
+                    </a-button>
+                    <span class="role-path">{{ role.href }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
-      </template>
-    </div>
-  </div>
+      </a-layout-content>
+    </a-layout>
+
+  </a-layout>
 </script>
 
 <!-- 1. Day.js UMD 及插件 -->
@@ -141,7 +216,7 @@
 
 <!-- 4. 业务脚本 -->
 <script>
-  const { createApp } = Vue;
+  const { createApp, ref } = Vue;
 
   // 公共文案，避免重复
   const leaderBase = {
@@ -175,6 +250,11 @@
   const app = createApp({
     template: '#app-template',
     setup() {
+      // 侧边栏折叠状态必须由 setup 返回，否则 v-model 绑定的是 undefined
+      const collapsed = ref(false);
+      // 当前页面在 /setup 下，菜单高亮「设置」
+      const selectedKeys = ref(['setup']);
+
       const groups = [
         {
           key: 'edge',
@@ -242,7 +322,7 @@
         },
       ];
 
-      return { groups };
+      return { collapsed, selectedKeys, groups };
     }
   });
 
