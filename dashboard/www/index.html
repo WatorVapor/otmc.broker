@@ -2,7 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#001529" />
     <title>IoT Dashboard · MQTT over WebSocket</title>
 
     <!-- antdv-next 样式（与 OTMC 页面一致） -->
@@ -11,6 +12,13 @@
 
     <style>
         html, body, #app { height: 100%; margin: 0; background: #f0f2f5; }
+        body {
+            overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ===== 以下基础样式与原始 PC 布局完全一致 ===== */
 
         /* Logo：与 OTMC 页面保持一致，折叠时只显示缩写 */
         .logo {
@@ -30,13 +38,18 @@
             background: #fff; padding: 0 24px; display: flex; align-items: center;
             justify-content: space-between; box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
         }
+        .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .header-title { font-size: 16px; font-weight: 600; white-space: nowrap; }
+        .conn-state { font-size: 12px; white-space: nowrap; display: inline-flex; align-items: center; }
+        .header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+
         .stat-card .ant-card-body { padding: 18px 22px; }
         .stat-label { color: #8c8c8c; font-size: 13px; margin-bottom: 6px; }
         .stat-value { font-size: 26px; font-weight: 600; color: #1f1f1f; line-height: 1.2; }
         .chart-box { height: 320px; width: 100%; }
         .live-dot {
             display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-            margin-right: 6px; animation: pulse 1.4s infinite;
+            margin-right: 6px; animation: pulse 1.4s infinite; flex: none;
         }
         .live-dot.on  { background: #52c41a; }
         .live-dot.off { background: #bfbfbf; animation: none; }
@@ -50,6 +63,8 @@
             background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;
             font-size: 12px; line-height: 1.6; padding: 12px; border-radius: 6px;
             height: 220px; overflow-y: auto;
+            white-space: pre-wrap; word-break: break-all;
+            -webkit-overflow-scrolling: touch;
         }
         .msg-log .t { color: #569cd6; }
         .msg-log .tp { color: #4ec9b0; }
@@ -63,13 +78,84 @@
         }
         .alert-item:last-child { border-bottom: none; }
         .alert-item .meta { font-size: 12px; color: #8c8c8c; }
+
+        /* 移动端专用：设备卡片列表（PC 不渲染） */
+        .device-cards { display: flex; flex-direction: column; gap: 10px; }
+        .device-card {
+            border: 1px solid #f0f0f0; border-radius: 8px;
+            padding: 10px 12px; background: #fafafa;
+        }
+        .device-card-head {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 6px;
+        }
+        .device-id { font-weight: 600; font-size: 14px; }
+        .device-card-body {
+            display: flex; flex-wrap: wrap; gap: 12px;
+            font-size: 13px; color: #595959;
+        }
+        .device-card-foot { margin-top: 6px; font-size: 12px; color: #8c8c8c; }
+        .empty-tip { text-align: center; color: #8c8c8c; font-size: 13px; padding: 18px 0; }
+
+        /* ============ 移动端（≤768px）才应用的覆盖样式 ============ */
+        @media (max-width: 768px) {
+            .site-header {
+                height: 56px;
+                padding: 0 8px;
+                line-height: normal;
+            }
+            .header-left { gap: 6px; }
+            .header-title { font-size: 15px; }
+            .conn-state { font-size: 11px; }
+            .header-right { gap: 8px; }
+
+            .ant-layout-content {
+                padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+            }
+
+            .ant-card-head { padding: 0 12px; min-height: 44px; }
+            .ant-card-head-title { font-size: 14px; padding: 10px 0; }
+            .ant-card-body { padding: 14px 12px; }
+
+            .stat-card .ant-card-body { padding: 12px 14px; }
+            .stat-label { font-size: 12px; margin-bottom: 2px; }
+            .stat-value { font-size: 20px; }
+
+            .chart-box { height: 220px; }
+
+            .msg-log { height: 160px; font-size: 11px; padding: 10px; }
+
+            .alert-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            .alert-item .meta { font-size: 11px; }
+
+            /* 防止 iOS 输入框聚焦自动放大 */
+            .ant-form-item .ant-input,
+            .ant-form-item .ant-input-affix-wrapper,
+            .ant-form-item textarea.ant-input,
+            .ant-form-item .ant-select-selector {
+                font-size: 16px;
+            }
+
+            .ant-btn { min-height: 32px; }
+            .ant-btn-sm { min-height: 30px; padding: 0 10px; }
+        }
+
+        @media (max-width: 480px) {
+            .header-title { display: none; }
+            .chart-box { height: 200px; }
+        }
     </style>
 </head>
 <body>
     <div id="app">
         <a-layout style="min-height: 100vh;">
-            <!-- 左侧导航：与 OTMC 页面一致的折叠方式 -->
+            <!-- 桌面端左侧导航：结构与原版一致 -->
             <a-layout-sider
+                v-if="!isMobile"
                 v-model:collapsed="collapsed"
                 collapsible
                 :trigger="null"
@@ -79,38 +165,58 @@
                 <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
                 <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
                     <a-menu-item key="overview">
-                        <a href="/" rel="noopener" style="display:block">
-                            🏠 首页
-                        </a>
+                        <a href="/" rel="noopener" style="display:block">🏠 首页</a>
                     </a-menu-item>
-
                     <a-menu-item key="setup">
-                        <a href="/setup" rel="noopener" style="display:block">
-                            ⚙️ 设置
-                        </a>
+                        <a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a>
                     </a-menu-item>
                 </a-menu>
             </a-layout-sider>
 
+            <!-- 移动端抽屉导航（PC 不渲染） -->
+            <a-drawer
+                v-if="isMobile"
+                v-model:open="drawerOpen"
+                placement="left"
+                :width="230"
+                :closable="false"
+                :styles="{ body: { padding: 0, background: '#001529' } }"
+            >
+                <div class="logo">OTMC 导航</div>
+                <a-menu
+                    theme="dark"
+                    mode="inline"
+                    :selected-keys="selectedKeys"
+                    @click="drawerOpen = false"
+                >
+                    <a-menu-item key="overview">
+                        <a href="/" rel="noopener" style="display:block">🏠 首页</a>
+                    </a-menu-item>
+                    <a-menu-item key="setup">
+                        <a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a>
+                    </a-menu-item>
+                </a-menu>
+            </a-drawer>
+
             <a-layout>
                 <a-layout-header class="site-header">
-                    <div style="display:flex;align-items:center;gap:12px;">
-                        <!-- 顶部按钮：控制侧栏开合 -->
-                        <a-button type="text" @click="collapsed = !collapsed">
-                            <span v-if="collapsed">☰</span><span v-else>✕</span>
+                    <div class="header-left">
+                        <!-- 顶部按钮：PC 切换侧栏折叠，手机打开抽屉 -->
+                        <a-button type="text" @click="toggleMenu">
+                            <span v-if="isMobile || collapsed">☰</span><span v-else>✕</span>
                         </a-button>
-                        <span style="font-size:16px;font-weight:600;">MQTT 实时监控</span>
-                        <span :style="{ fontSize: '12px', color: connected ? '#52c41a' : '#bfbfbf' }">
+                        <span class="header-title">MQTT 实时监控</span>
+                        <span class="conn-state" :style="{ color: connected ? '#52c41a' : '#bfbfbf' }">
                             <span class="live-dot" :class="connected ? 'on' : 'off'"></span>
                             {{ connected ? '已连接' : (connecting ? '连接中…' : '未连接') }}
                         </span>
                     </div>
-                    <div style="display:flex;align-items:center;gap:12px;">
+                    <div class="header-right">
                         <a-button size="small" :type="connected ? 'default' : 'primary'" @click="connectMQTT" :loading="connecting">
                             {{ connected ? '重新连接' : '连接' }}
                         </a-button>
                         <a-button size="small" danger :disabled="!connected" @click="disconnectMQTT">断开</a-button>
-                        <a-avatar style="background-color:#1677ff;">运</a-avatar>
+                        <a-avatar v-if="!isMobile" style="background-color:#1677ff;">运</a-avatar>
                     </div>
                 </a-layout-header>
 
@@ -123,24 +229,24 @@
                                         <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
                                     </a-form-item>
                                     <a-row :gutter="12">
-                                        <a-col :span="12">
+                                        <a-col :xs="24" :sm="12">
                                             <a-form-item label="Client ID">
                                                 <a-input v-model:value="connectForm.clientId"></a-input>
                                             </a-form-item>
                                         </a-col>
-                                        <a-col :span="12">
+                                        <a-col :xs="24" :sm="12">
                                             <a-form-item label="订阅 Topic">
                                                 <a-input v-model:value="connectForm.subTopic"></a-input>
                                             </a-form-item>
                                         </a-col>
                                     </a-row>
                                     <a-row :gutter="12">
-                                        <a-col :span="12">
+                                        <a-col :xs="24" :sm="12">
                                             <a-form-item label="Username（可选）">
                                                 <a-input v-model:value="connectForm.username"></a-input>
                                             </a-form-item>
                                         </a-col>
-                                        <a-col :span="12">
+                                        <a-col :xs="24" :sm="12">
                                             <a-form-item label="Password（可选）">
                                                 <a-input-password v-model:value="connectForm.password"></a-input-password>
                                             </a-form-item>
@@ -173,26 +279,27 @@
                         </a-col>
                     </a-row>
 
+                    <!-- 统计卡：PC 保持 xl=6 四列，与原版一致 -->
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
-                        <a-col :xs="24" :sm="12" :xl="6">
+                        <a-col :xs="12" :sm="12" :xl="6">
                             <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">在线设备</div>
                                 <div class="stat-value" style="color:#52c41a;">{{ summary.online }}</div>
                             </a-card>
                         </a-col>
-                        <a-col :xs="24" :sm="12" :xl="6">
+                        <a-col :xs="12" :sm="12" :xl="6">
                             <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">离线设备</div>
                                 <div class="stat-value" style="color:#ff4d4f;">{{ summary.offline }}</div>
                             </a-card>
                         </a-col>
-                        <a-col :xs="24" :sm="12" :xl="6">
+                        <a-col :xs="12" :sm="12" :xl="6">
                             <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">告警数</div>
                                 <div class="stat-value" style="color:#faad14;">{{ summary.alerts }}</div>
                             </a-card>
                         </a-col>
-                        <a-col :xs="24" :sm="12" :xl="6">
+                        <a-col :xs="12" :sm="12" :xl="6">
                             <a-card class="stat-card" variant="borderless">
                                 <div class="stat-label">消息吞吐 (条/秒)</div>
                                 <div class="stat-value" style="color:#1677ff;">{{ summary.throughput }}</div>
@@ -232,7 +339,30 @@
 
                         <a-col :xs="24" :xl="16">
                             <a-card variant="borderless" title="设备状态（来自 MQTT 消息）">
+                                <!-- 移动端：卡片列表 -->
+                                <div v-if="isMobile" class="device-cards">
+                                    <div v-for="d in devices" :key="d.key" class="device-card">
+                                        <div class="device-card-head">
+                                            <span class="device-id">{{ d.id }}</span>
+                                            <a-tag :color="statusColor(d.status)" style="margin:0;">
+                                                {{ statusText(d.status) }}
+                                            </a-tag>
+                                        </div>
+                                        <div class="device-card-body">
+                                            <span>🌡 {{ d.temp !== null ? d.temp + ' °C' : '—' }}</span>
+                                            <span>💧 {{ d.hum !== null ? d.hum + ' %' : '—' }}</span>
+                                            <span>📍 {{ d.location }}</span>
+                                        </div>
+                                        <div class="device-card-foot">{{ d.type }} · {{ d.lastSeen }}</div>
+                                    </div>
+                                    <div v-if="devices.length === 0" class="empty-tip">
+                                        暂无设备数据，等待 MQTT 消息…
+                                    </div>
+                                </div>
+
+                                <!-- PC：表格（与原版完全一致） -->
                                 <a-table
+                                    v-else
                                     :columns="columns"
                                     :data-source="devices"
                                     :pagination="false"
@@ -303,13 +433,26 @@
 
     <!-- 5. 业务脚本 -->
     <script>
-        const { createApp, ref, reactive, onMounted, onBeforeUnmount, h } = Vue;
+        const { createApp, ref, reactive, onMounted, onBeforeUnmount, h, nextTick } = Vue;
 
         const app = createApp({
             setup() {
-                /* ===== 侧边导航状态 ===== */
+                /* ===== 响应式断点（仅手机触发，PC 分支走原版逻辑） ===== */
+                const mqMobile = window.matchMedia('(max-width: 768px)');
+                const isMobile = ref(mqMobile.matches);
+
+                /* ===== 导航状态 ===== */
                 const collapsed = ref(false);
-                const selectedKeys = ref(['overview']); // 当前为监控面板，高亮「首页」
+                const drawerOpen = ref(false);
+                const selectedKeys = ref(['overview']);
+
+                const toggleMenu = () => {
+                    if (isMobile.value) {
+                        drawerOpen.value = !drawerOpen.value;
+                    } else {
+                        collapsed.value = !collapsed.value; // PC 与原版一致
+                    }
+                };
 
                 /* ===== MQTT 连接表单 ===== */
                 const connectForm = reactive({
@@ -358,50 +501,66 @@
                 let lineChart = null;
                 let donutChart = null;
 
-                const lineOption = () => ({
-                    tooltip: { trigger: 'axis' },
-                    legend: { data: ['温度 (°C)', '湿度 (%)'], top: 0 },
-                    grid: { left: 46, right: 52, top: 44, bottom: 30 },
-                    xAxis: {
-                        type: 'category',
-                        boundaryGap: false,
-                        data: timeLabels.value,
-                        axisLabel: { fontSize: 11, color: '#8c8c8c' },
-                    },
-                    yAxis: [
-                        { type: 'value', name: '°C', min: 15, max: 40, nameTextStyle: { color: '#8c8c8c' }, splitLine: { lineStyle: { type: 'dashed' } } },
-                        { type: 'value', name: '%',  min: 30, max: 80, nameTextStyle: { color: '#8c8c8c' }, splitLine: { show: false } },
-                    ],
-                    series: [
-                        {
-                            name: '温度 (°C)', type: 'line', smooth: true, symbol: 'none',
-                            data: tempData.value,
-                            lineStyle: { width: 2, color: '#fa541c' },
-                            itemStyle: { color: '#fa541c' },
-                            areaStyle: { color: 'rgba(250,84,28,0.10)' },
+                /* ===== 折线图：PC 参数与原版完全一致；手机分支才收缩 ===== */
+                const lineOption = () => {
+                    const mobile = isMobile.value;
+                    return {
+                        tooltip: { trigger: 'axis', confine: true },
+                        legend: mobile
+                            ? { data: ['温度 (°C)', '湿度 (%)'], top: 0, itemWidth: 14, itemHeight: 8 }
+                            : { data: ['温度 (°C)', '湿度 (%)'], top: 0 },
+                        grid: mobile
+                            ? { left: 40, right: 44, top: 44, bottom: 26 }
+                            : { left: 46, right: 52, top: 44, bottom: 30 },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            data: timeLabels.value,
+                            axisLabel: mobile
+                                ? { fontSize: 10, color: '#8c8c8c', hideOverlap: true }
+                                : { fontSize: 11, color: '#8c8c8c' },
                         },
-                        {
-                            name: '湿度 (%)', type: 'line', smooth: true, symbol: 'none', yAxisIndex: 1,
-                            data: humData.value,
-                            lineStyle: { width: 2, color: '#1677ff' },
-                            itemStyle: { color: '#1677ff' },
-                            areaStyle: { color: 'rgba(22,119,255,0.10)' },
-                        },
-                    ],
-                });
+                        yAxis: mobile
+                            ? [
+                                { type: 'value', name: '°C', min: 15, max: 40, nameTextStyle: { color: '#8c8c8c', fontSize: 10 }, axisLabel: { fontSize: 10 }, splitLine: { lineStyle: { type: 'dashed' } } },
+                                { type: 'value', name: '%',  min: 30, max: 80, nameTextStyle: { color: '#8c8c8c', fontSize: 10 }, axisLabel: { fontSize: 10 }, splitLine: { show: false } },
+                              ]
+                            : [
+                                { type: 'value', name: '°C', min: 15, max: 40, nameTextStyle: { color: '#8c8c8c' }, splitLine: { lineStyle: { type: 'dashed' } } },
+                                { type: 'value', name: '%',  min: 30, max: 80, nameTextStyle: { color: '#8c8c8c' }, splitLine: { show: false } },
+                              ],
+                        series: [
+                            {
+                                name: '温度 (°C)', type: 'line', smooth: true, symbol: 'none',
+                                data: tempData.value,
+                                lineStyle: { width: 2, color: '#fa541c' },
+                                itemStyle: { color: '#fa541c' },
+                                areaStyle: { color: 'rgba(250,84,28,0.10)' },
+                            },
+                            {
+                                name: '湿度 (%)', type: 'line', smooth: true, symbol: 'none', yAxisIndex: 1,
+                                data: humData.value,
+                                lineStyle: { width: 2, color: '#1677ff' },
+                                itemStyle: { color: '#1677ff' },
+                                areaStyle: { color: 'rgba(22,119,255,0.10)' },
+                            },
+                        ],
+                    };
+                };
 
+                /* ===== 环形图：PC 参数与原版完全一致 ===== */
                 const donutOption = () => {
                     const total = summary.online + summary.offline;
                     const rate = total ? ((summary.online / total) * 100).toFixed(1) : '0.0';
                     return {
-                        tooltip: { trigger: 'item', formatter: '{b}: {c} 台 ({d}%)' },
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} 台 ({d}%)', confine: true },
                         legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },
                         title: {
                             text: rate + '%',
                             subtext: '在线率',
                             left: 'center',
-                            top: '34%',
-                            textStyle: { fontSize: 26, fontWeight: 600, color: '#1f1f1f' },
+                            top: isMobile.value ? '32%' : '34%',
+                            textStyle: { fontSize: isMobile.value ? 22 : 26, fontWeight: 600, color: '#1f1f1f' },
                             subtextStyle: { fontSize: 12, color: '#8c8c8c' },
                         },
                         series: [{
@@ -417,6 +576,28 @@
                             ],
                         }],
                     };
+                };
+
+                /* ===== 图表尺寸自适应（rAF 防抖） ===== */
+                let rafId = null;
+                const handleResize = () => {
+                    if (rafId) return;
+                    rafId = requestAnimationFrame(() => {
+                        rafId = null;
+                        if (lineChart) lineChart.resize();
+                        if (donutChart) donutChart.resize();
+                    });
+                };
+
+                /* ===== 断点切换：重建 option（PC/手机参数不同） ===== */
+                const onMediaChange = (e) => {
+                    isMobile.value = e.matches;
+                    if (!e.matches) drawerOpen.value = false;
+                    nextTick(() => {
+                        if (lineChart) lineChart.setOption(lineOption(), true);
+                        if (donutChart) donutChart.setOption(donutOption(), true);
+                        setTimeout(handleResize, 60);
+                    });
                 };
 
                 const connectMQTT = () => {
@@ -584,6 +765,8 @@
                     });
                 };
 
+                let resizeObserver = null;
+
                 onMounted(() => {
                     lineChart = echarts.init(lineRef.value);
                     lineChart.setOption(lineOption());
@@ -592,20 +775,46 @@
                     donutChart.setOption(donutOption());
 
                     window.addEventListener('resize', handleResize);
+                    window.addEventListener('orientationchange', handleResize);
+
+                    if (mqMobile.addEventListener) {
+                        mqMobile.addEventListener('change', onMediaChange);
+                    } else if (mqMobile.addListener) {
+                        mqMobile.addListener(onMediaChange);
+                    }
+
+                    if (window.ResizeObserver) {
+                        resizeObserver = new ResizeObserver(() => handleResize());
+                        if (lineRef.value) resizeObserver.observe(lineRef.value);
+                        if (donutRef.value) resizeObserver.observe(donutRef.value);
+                    }
+
                     connectMQTT();
                 });
 
                 onBeforeUnmount(() => {
                     window.removeEventListener('resize', handleResize);
+                    window.removeEventListener('orientationchange', handleResize);
+
+                    if (mqMobile.removeEventListener) {
+                        mqMobile.removeEventListener('change', onMediaChange);
+                    } else if (mqMobile.removeListener) {
+                        mqMobile.removeListener(onMediaChange);
+                    }
+
+                    if (resizeObserver) {
+                        resizeObserver.disconnect();
+                        resizeObserver = null;
+                    }
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = null;
+                    }
+
                     if (lineChart) lineChart.dispose();
                     if (donutChart) donutChart.dispose();
                     if (mqttClient) mqttClient.end(true);
                 });
-
-                const handleResize = () => {
-                    if (lineChart) lineChart.resize();
-                    if (donutChart) donutChart.resize();
-                };
 
                 // antdv-next 中 Table 的 customRender 已更名为 render
                 const columns = [
@@ -635,10 +844,7 @@
                 ];
 
                 return {
-                    /* 侧边导航 */
-                    collapsed,
-                    selectedKeys,
-                    /* MQTT */
+                    collapsed, drawerOpen, selectedKeys, toggleMenu, isMobile,
                     connectForm, connected, connecting,
                     logs, summary, devices, alerts, columns,
                     pubMessage, lineRef, donutRef,

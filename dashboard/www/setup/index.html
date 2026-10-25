@@ -2,7 +2,8 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#001529" />
   <title>OTMC 角色选择</title>
 
   <!-- antdv-next 样式 -->
@@ -14,7 +15,11 @@
     body {
       background: #f0f2f5;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
     }
+
+    /* ===== 以下基础样式与 PC 原版完全一致 ===== */
 
     /* 侧边栏 Logo */
     .logo {
@@ -30,7 +35,7 @@
       overflow: hidden;
     }
 
-    /* 顶部栏（放在 a-layout-header 里） */
+    /* 顶部栏 */
     .page-header {
       background: #001529;
       color: #fff;
@@ -86,6 +91,56 @@
       margin: 0 0 12px; padding-left: 4px;
       border-left: 3px solid #1677ff;
     }
+
+    /* ===== 移动端（≤768px）才应用的覆盖样式 ===== */
+    @media (max-width: 768px) {
+      .page-header {
+        height: 56px;
+        padding: 0 8px;
+        font-size: 15px;
+        gap: 4px;
+        line-height: normal;
+      }
+      .page-header .collapse-btn {
+        font-size: 18px;
+        padding: 0 6px;
+      }
+
+      .page-content {
+        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      }
+
+      /* 角色卡片纵向堆叠，去掉 300px 最小宽度以免横向溢出 */
+      .row-flex {
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .col-flex {
+        flex: 1 1 100%;
+        min-width: 0;
+      }
+
+      .role-card {
+        height: auto;
+        padding: 16px;
+      }
+      .role-title { font-size: 15px; }
+      .role-list { font-size: 13px; padding-left: 18px; line-height: 1.7; }
+      .role-block-title { margin-top: 12px; font-size: 13px; }
+      .group-label { font-size: 13px; margin-bottom: 8px; }
+
+      .role-foot { padding-top: 14px; }
+      .role-path { font-size: 11px; word-break: break-all; line-height: 1.4; }
+
+      /* 触摸目标更大 */
+      .ant-btn { min-height: 36px; }
+      .ant-alert { padding: 10px 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .page-header { font-size: 14px; }
+      .role-card { padding: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -93,11 +148,11 @@
 <div id="app"></div>
 
 <script type="text/x-template" id="app-template">
-  <!-- 关键：Sider 必须放在 a-layout 内部 -->
   <a-layout style="min-height: 100vh">
 
-    <!-- 左侧菜单 -->
+    <!-- 桌面端左侧菜单：结构与原版一致 -->
     <a-layout-sider
+      v-if="!isMobile"
       v-model:collapsed="collapsed"
       collapsible
       :trigger="null"
@@ -116,10 +171,36 @@
       </a-menu>
     </a-layout-sider>
 
+    <!-- 移动端抽屉导航（PC 不渲染） -->
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="drawerOpen"
+      placement="left"
+      :width="230"
+      :closable="false"
+      :styles="{ body: { padding: 0, background: '#001529' } }"
+    >
+      <div class="logo">OTMC 导航</div>
+      <a-menu
+        theme="dark"
+        mode="inline"
+        :selected-keys="selectedKeys"
+        @click="drawerOpen = false"
+      >
+        <a-menu-item key="overview">
+          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
+        </a-menu-item>
+        <a-menu-item key="setup">
+          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
+        </a-menu-item>
+      </a-menu>
+    </a-drawer>
+
     <!-- 右侧主体 -->
     <a-layout>
       <a-layout-header class="page-header">
-        <a-button type="text" class="collapse-btn" @click="collapsed = !collapsed">☰</a-button>
+        <!-- PC 切换侧栏折叠；手机打开抽屉 -->
+        <a-button type="text" class="collapse-btn" @click="toggleMenu">☰</a-button>
         <span>OTMC 设定角色选择</span>
       </a-layout-header>
 
@@ -216,7 +297,7 @@
 
 <!-- 4. 业务脚本 -->
 <script>
-  const { createApp, ref } = Vue;
+  const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
 
   // 公共文案，避免重复
   const leaderBase = {
@@ -250,10 +331,43 @@
   const app = createApp({
     template: '#app-template',
     setup() {
-      // 侧边栏折叠状态必须由 setup 返回，否则 v-model 绑定的是 undefined
-      const collapsed = ref(false);
-      // 当前页面在 /setup 下，菜单高亮「设置」
-      const selectedKeys = ref(['setup']);
+      /* ===== 响应式断点（仅 ≤768px 触发） ===== */
+      const mqMobile = window.matchMedia('(max-width: 768px)');
+      const isMobile = ref(mqMobile.matches);
+
+      /* ===== 导航状态 ===== */
+      const collapsed = ref(false);   // PC 端侧栏折叠
+      const drawerOpen = ref(false);  // 移动端抽屉
+      const selectedKeys = ref(['setup']); // 当前页面在 /setup 下
+
+      const toggleMenu = () => {
+        if (isMobile.value) {
+          drawerOpen.value = !drawerOpen.value;
+        } else {
+          collapsed.value = !collapsed.value; // PC 行为与原版一致
+        }
+      };
+
+      const onMediaChange = (e) => {
+        isMobile.value = e.matches;
+        if (!e.matches) drawerOpen.value = false;
+      };
+
+      onMounted(() => {
+        if (mqMobile.addEventListener) {
+          mqMobile.addEventListener('change', onMediaChange);
+        } else if (mqMobile.addListener) {
+          mqMobile.addListener(onMediaChange);
+        }
+      });
+
+      onBeforeUnmount(() => {
+        if (mqMobile.removeEventListener) {
+          mqMobile.removeEventListener('change', onMediaChange);
+        } else if (mqMobile.removeListener) {
+          mqMobile.removeListener(onMediaChange);
+        }
+      });
 
       const groups = [
         {
@@ -296,7 +410,7 @@
               key: 'browser-leader',
               ...leaderBase,
               title: '领头者角色 · 浏览器',
-              tag: 'Leader',
+              tag: 'Leader browser',
               href: '/setup/browser/leader/',
               buttonText: '进入领头者初始化',
               warn:
@@ -309,7 +423,7 @@
               key: 'browser-follower',
               ...followerBase,
               title: '跟随者角色 · 浏览器',
-              tag: 'Follower',
+              tag: 'Follower browser',
               href: '/setup/browser/follower/',
               buttonText: '进入跟随者初始化',
               warn:
@@ -322,7 +436,7 @@
         },
       ];
 
-      return { collapsed, selectedKeys, groups };
+      return { collapsed, drawerOpen, selectedKeys, isMobile, toggleMenu, groups };
     }
   });
 
