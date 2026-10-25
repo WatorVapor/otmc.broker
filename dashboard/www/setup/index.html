@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OTMC Client 初始化 · 角色选择</title>
+  <title>OTMC 角色选择</title>
 
   <!-- antdv-next 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
@@ -51,13 +51,14 @@
 
 <script type="text/x-template" id="app-template">
   <div>
-    <div class="page-header">OTMC Client 初始化 · 角色选择</div>
+    <div class="page-header">OTMC 设定角色选择</div>
     <div class="page-content">
       <a-alert
         type="info"
         show-icon
-        message="请选择本机 OTMC Client 的角色"
-        description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。"
+        message="OTMC角色分类"
+        description="领头者负责建立信任根、逐级签发证书，并为跟随者出具身份证书；跟随者加入一个已经存在的 OTMC Space，只生成自己的终端密钥并提交 CSR 等待签发。两者初始化流程不同，请按实际部署规划选择。
+        边缘设备主要是指运行linux的终端系统，和OTMC服务器通过TCP或者QUIC的MQTT连接，浏览器设备主要是运行的Chrome等浏览器上，主要通过websocket的MQTT连接"
         style="margin-bottom: 24px"
       />
 
@@ -188,7 +189,7 @@
               ...leaderBase,
               title: '领头者角色 · 边缘设备',
               tag: 'Leader edge',
-              href: '/setup/leader/',
+              href: '/setup/edge/leader/',
               buttonText: '进入领头者初始化 · 边缘设备',
               summary:
                 '领头者是 OTMC Space 中信任根的建立者与维护者。它负责生成 Space 级 CA 密钥对，' +
@@ -199,7 +200,7 @@
               ...followerBase,
               title: '跟随者角色 · 边缘设备',
               tag: 'Follower edge',
-              href: '/setup/follower/',
+              href: '/setup/edge/follower/',
               buttonText: '进入跟随者初始化 · 边缘设备',
               summary:
                 '跟随者是加入一个已经建立好的 OTMC Space 的客户端。它不持有任何 CA 私钥，' +
@@ -216,7 +217,7 @@
               ...leaderBase,
               title: '领头者角色 · 浏览器',
               tag: 'Leader',
-              href: '/setup/leader/',
+              href: '/setup/browser/leader/',
               buttonText: '进入领头者初始化',
               summary:
                 '领头者是 OTMC Space 中信任根的建立者与维护者。它负责生成 Space 级 CA 密钥对，' +
@@ -227,7 +228,7 @@
               ...followerBase,
               title: '跟随者角色 · 浏览器',
               tag: 'Follower',
-              href: '/setup/follower/',
+              href: '/setup/browser/follower/',
               buttonText: '进入跟随者初始化',
               summary:
                 '跟随者是加入一个已经建立好的 OTMC Space 的客户端。它不持有任何 CA 私钥，' +
