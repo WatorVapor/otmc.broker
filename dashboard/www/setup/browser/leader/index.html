@@ -74,6 +74,86 @@
     }
     .secure-box.ca { background: #fff2e8; border-color: #ffbb96; color: #612500; }
 
+    /* ===== 证书类型 Segmented —— 颜色区分 ===== */
+    .cert-type-seg.ant-segmented {
+      padding: 6px !important;
+      background: #eef2f7 !important;
+      border-radius: 12px !important;
+    }
+
+    /* 隐藏原生白色滑块，让每个选项用自身颜色高亮 */
+    .cert-type-seg .ant-segmented-thumb {
+      display: none !important;
+    }
+
+    .cert-type-seg .ant-segmented-item {
+      border-radius: 8px !important;
+      margin: 0 2px !important;
+      transition: background .2s ease, box-shadow .2s ease, color .2s ease !important;
+    }
+
+    .cert-type-seg .ant-segmented-item-label {
+      padding: 6px 14px !important;
+      font-weight: 500 !important;
+      line-height: 1.5 !important;
+      transition: color .2s ease !important;
+    }
+
+    /* 三个证书类型各自的色系（与顺序对应：1 级 CA / 2 级 CA / 叶子） */
+    .cert-type-seg .ant-segmented-item:nth-child(1) {
+      --c-main: #cf1322;
+      --c-soft: #fff1f0;
+      --c-edge: #ffccc7;
+    }
+    .cert-type-seg .ant-segmented-item:nth-child(2) {
+      --c-main: #d46b08;
+      --c-soft: #fff7e6;
+      --c-edge: #ffd591;
+    }
+    .cert-type-seg .ant-segmented-item:nth-child(3) {
+      --c-main: #0958d9;
+      --c-soft: #e6f4ff;
+      --c-edge: #91caff;
+    }
+
+    /* 未选中：浅底 + 主题色文字 + 细边框 */
+    .cert-type-seg .ant-segmented-item:not(.ant-segmented-item-selected) {
+      background: var(--c-soft) !important;
+      box-shadow: inset 0 0 0 1px var(--c-edge) !important;
+    }
+    .cert-type-seg .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label {
+      color: var(--c-main) !important;
+    }
+    .cert-type-seg .ant-segmented-item:not(.ant-segmented-item-selected):hover {
+      box-shadow: inset 0 0 0 1px var(--c-main) !important;
+    }
+
+    /* 选中：实心主题色 + 白字 + 阴影 */
+    .cert-type-seg .ant-segmented-item-selected {
+      background: var(--c-main) !important;
+      box-shadow: 0 3px 10px -2px var(--c-main) !important;
+    }
+    .cert-type-seg .ant-segmented-item-selected .ant-segmented-item-label {
+      color: #fff !important;
+      font-weight: 600 !important;
+    }
+
+    /* ===== 当前类型说明条（带类型色） ===== */
+    .type-hint {
+      margin: 0 0 16px;
+      padding: 10px 12px 10px 14px;
+      font-size: 13px;
+      line-height: 1.65;
+      border-left: 3px solid #d9d9d9;
+      border-radius: 0 8px 8px 0;
+      background: #f6f8fb;
+      color: rgba(0, 0, 0, .65);
+      transition: border-color .2s ease, background .2s ease, color .2s ease;
+    }
+    .type-hint.hint--space-top   { border-left-color: #cf1322; background: #fff8f7; color: #a8071a; }
+    .type-hint.hint--space-inter { border-left-color: #d46b08; background: #fffbf0; color: #ad4e00; }
+    .type-hint.hint--client-leaf { border-left-color: #0958d9; background: #f4f9ff; color: #003eb3; }
+
     /* ===== 移动端（≤768px）覆盖样式 ===== */
     @media (max-width: 768px) {
       .page-header {
@@ -99,6 +179,11 @@
       /* 触摸目标更大 */
       .ant-btn { min-height: 36px; }
       .ant-alert { padding: 10px 12px; }
+
+      .cert-type-seg .ant-segmented-item-label {
+        padding: 6px 8px !important;
+        font-size: 13px !important;
+      }
     }
 
     @media (max-width: 480px) {
@@ -184,12 +269,13 @@
               v-model:value="currentTypeKey"
               :options="typeOptions"
               block
+              class="cert-type-seg"
               style="margin-bottom: 12px"
               @change="onTypeChange"
             />
-            <a-typography-paragraph type="secondary" style="margin: 0 0 16px">
+            <div class="type-hint" :class="`hint--${currentTypeKey}`">
               {{ currentType.hint }}
-            </a-typography-paragraph>
+            </div>
 
             <a-form layout="vertical">
               <a-row :gutter="16">

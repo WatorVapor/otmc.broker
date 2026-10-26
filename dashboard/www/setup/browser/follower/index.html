@@ -71,6 +71,74 @@
       padding: 12px 16px; color: #135200;
     }
 
+    /* ===== 区块主题色系统 ===== */
+    .accent-blue   { --accent: #0958d9; --accent-soft: #eef5ff; --accent-edge: #c8ddff; }
+    .accent-green  { --accent: #389e0d; --accent-soft: #f4fbe9; --accent-edge: #d3efb4; }
+    .accent-cyan   { --accent: #08979c; --accent-soft: #ecfffd; --accent-edge: #b5eee9; }
+    .accent-orange { --accent: #d46b08; --accent-soft: #fff8ec; --accent-edge: #ffdca0; }
+
+    .section.ant-card {
+      border-radius: 10px;
+      border: 1px solid #ebedf0;
+      border-top: 3px solid var(--accent, #e8e8e8);
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .03);
+    }
+
+    .section.ant-card .ant-card-head {
+      border-bottom: 1px solid var(--accent-edge, #f0f0f0) !important;
+      background: linear-gradient(90deg, var(--accent-soft, #fafafa), #ffffff 70%);
+      min-height: 52px;
+      padding: 0 20px;
+    }
+
+    .section.ant-card .ant-card-head-title {
+      position: relative;
+      padding-left: 14px !important;
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(0, 0, 0, .88);
+    }
+
+    .section.ant-card .ant-card-head-title::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: var(--accent, #d9d9d9);
+    }
+
+    /* ===== 终端证书类型说明提示框 ===== */
+    .type-hint {
+      margin: 0 0 16px;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #0958d9;
+      background: #f4f9ff;
+      border: 1px solid #c8ddff;
+      border-left: 3px solid #0958d9;
+      border-radius: 0 8px 8px 0;
+    }
+    .type-hint b { color: #003eb3; }
+
+    /* ===== 生成 / 存储 提示微调 ===== */
+    .gen-warn {
+      margin: 12px 0 0;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #ad4e00;
+      background: #fff8ec;
+      border: 1px solid #ffdca0;
+      border-left: 3px solid #d46b08;
+      border-radius: 0 8px 8px 0;
+    }
+
     @media (max-width: 768px) {
       .page-header {
         height: 56px; padding: 0 8px; font-size: 15px; gap: 4px; line-height: normal;
@@ -81,6 +149,10 @@
       .pem-text { font-size: 11px !important; }
       .ant-btn { min-height: 36px; }
       .ant-alert { padding: 10px 12px; }
+
+      .section.ant-card .ant-card-head { padding: 0 14px; min-height: 46px; }
+      .section.ant-card .ant-card-head-title { font-size: 14px; padding-left: 12px !important; }
+      .type-hint { padding: 9px 12px; }
     }
 
     @media (max-width: 480px) {
@@ -160,12 +232,12 @@
             message="当前环境不支持 IndexedDB，无法安全存储密钥"
           ></a-alert>
 
-          <!-- ① 证书类型与 Subject -->
-          <a-card class="section" title="① 终端证书与 Subject (DN)">
-            <a-typography-paragraph type="secondary" style="margin: 0 0 16px">
+          <!-- ① 终端证书与 Subject -->
+          <a-card class="section accent-blue" title="① 终端证书与 Subject (DN)">
+            <div class="type-hint">
               跟随者只需生成终端密钥对并提交 CSR，由所在 Space 的领头者或签发 CA 完成证书签发。
               本页面生成的证书类型固定为 <b>Client Leaf</b>，用于 MQTT mTLS 客户端身份。
-            </a-typography-paragraph>
+            </div>
 
             <a-form layout="vertical">
               <a-row :gutter="16">
@@ -196,7 +268,7 @@
           </a-card>
 
           <!-- ② 生成 -->
-          <a-card class="section" title="② 生成 / 存储">
+          <a-card class="section accent-green" title="② 生成 / 存储">
             <a-space wrap>
               <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
                 生成密钥对与 CSR
@@ -209,14 +281,14 @@
               </a-button>
             </a-space>
 
-            <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
+            <div class="gen-warn">
               ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
               重新生成会<b>覆盖</b>当前证书类型已有的密钥，旧密钥将永久丢失，且无法恢复。
-            </a-typography-paragraph>
+            </div>
           </a-card>
 
           <!-- ③ 结果 -->
-          <a-card v-if="hasResult" class="section" title="③ 结果">
+          <a-card v-if="hasResult" class="section accent-cyan" title="③ 结果">
             <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
               <a-descriptions-item label="证书类型">Client Leaf</a-descriptions-item>
               <a-descriptions-item label="生成时间">{{ result.createdAt }}</a-descriptions-item>
@@ -315,7 +387,7 @@ authorityKeyIdentifier = keyid,issuer</pre>
           </a-card>
 
           <!-- ④ 安全说明 -->
-          <a-card class="section" title="④ 关于此安全方案的边界说明">
+          <a-card class="section accent-orange" title="④ 关于此安全方案的边界说明">
             <a-typography-paragraph>
               <b>适用场景</b>：私钥仅需在<b>当前浏览器内</b>完成签名操作，且不需要将 .key 文件分发给其他 MQTT 客户端。
             </a-typography-paragraph>
