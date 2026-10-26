@@ -678,9 +678,9 @@ const CERT_TYPES = {
   },
 };
 
-const DB_NAME = 'mqtt-mtls-keystore';
+const DB_NAME = 'omtc-mtls-keystore';
 const DB_VERSION = 1;
-const STORE_NAME = 'keys';
+const STORE_NAME = 'browser_leader_cert_and_keys';
 
 function openDB() {
   return new Promise((resolve, reject) => {
