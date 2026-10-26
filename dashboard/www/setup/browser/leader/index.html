@@ -309,13 +309,22 @@
           </a-card>
 
           <!-- ② 生成 -->
-          <a-card class="section" title="② 生成 / 存储">
+          <a-card class="section" title="② 生成 / 存储 / 签发">
             <a-space wrap>
               <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
                 生成密钥对与 CSR
               </a-button>
               <a-button :loading="loading" :disabled="!hasStored || !indexedDbOk" @click="onLoad">
                 从 IndexedDB 加载
+              </a-button>
+              <a-button
+                type="primary"
+                ghost
+                :loading="signing"
+                :disabled="!hasResult || !cryptoOk || (!currentType.remote && !indexedDbOk)"
+                @click="onSign"
+              >
+                {{ signButtonLabel }}
               </a-button>
               <a-button danger :disabled="(!hasStored && !hasResult) || !indexedDbOk" @click="onClear">
                 清除 IndexedDB 中的密钥
@@ -325,6 +334,18 @@
             <a-typography-paragraph type="secondary" style="margin: 12px 0 0">
               ⚠️ 私钥始终以<b>不可导出</b>模式生成并存入 IndexedDB，无法被浏览器导出为 .key 文件。
               重新生成会<b>覆盖</b>当前证书类型已有的密钥，旧密钥将永久丢失，且无法恢复。
+            </a-typography-paragraph>
+
+            <a-typography-paragraph type="secondary" style="margin: 8px 0 0">
+              🔏 「{{ signButtonLabel }}」：
+              <template v-if="currentType.remote">
+                把 CSR 通过 HTTPS 提交到 OTMC 总服务器的签发接口，由服务器侧的
+                <span class="mono">client-broker-inter</span> 私钥签发 1 级 CA 证书。
+              </template>
+              <template v-else>
+                用本机 IndexedDB 中上级 CA（<span class="mono">{{ currentType.caName }}</span>）的不可导出私钥，
+                在浏览器内完成 X.509 v3 证书签发，签发后的证书会写回本类型的 IndexedDB 记录。
+              </template>
             </a-typography-paragraph>
           </a-card>
 
@@ -392,6 +413,43 @@
                 </a-space>
               </div>
               <a-textarea :rows="7" :value="result.csrPem" readonly class="pem-text" />
+            </div>
+
+            <!-- 已签发证书 -->
+            <div class="pem-block" v-if="result.certPem">
+              <div class="pem-head">
+                <span>
+                  <a-typography-text strong>已签发证书 (X.509 v3)</a-typography-text>
+                  <a-tag color="purple" style="margin-left: 8px">{{ currentType.filePrefix }}.crt</a-tag>
+                  <a-tag v-if="result.certIsMock" color="orange" style="margin-left: 4px">MOCK</a-tag>
+                </span>
+                <a-space>
+                  <a-button size="small" @click="copyText(result.certPem)">复制</a-button>
+                  <a-button size="small" @click="downloadFile(currentType.filePrefix + '.crt', result.certPem)">下载</a-button>
+                </a-space>
+              </div>
+
+              <a-alert
+                v-if="result.certIsMock"
+                type="warning"
+                show-icon
+                style="margin-bottom: 8px"
+                message="这是 dummy 服务端返回的占位证书，不是真实 X.509 结构。接入真实 OTMC 服务端后即可拿到有效证书。"
+              ></a-alert>
+
+              <a-descriptions :column="1" size="small" bordered style="margin-bottom: 8px">
+                <a-descriptions-item label="Serial">
+                  <span class="mono">{{ result.certSerial || '-' }}</span>
+                </a-descriptions-item>
+                <a-descriptions-item label="Issuer">
+                  <span class="mono">{{ result.certIssuer || '-' }}</span>
+                </a-descriptions-item>
+                <a-descriptions-item label="有效期">
+                  <span class="mono">{{ result.certNotBefore || '-' }} → {{ result.certNotAfter || '-' }}</span>
+                </a-descriptions-item>
+              </a-descriptions>
+
+              <a-textarea :rows="8" :value="result.certPem" readonly class="pem-text" />
             </div>
 
             <a-divider />
@@ -539,6 +597,10 @@ function derOid(oidStr) {
 
 const derUtf8 = (s) => tlv(0x0c, textEncoder.encode(s));
 const derBitString = (bytes) => tlv(0x03, concatBytes(new Uint8Array([0x00]), bytes));
+const derBool = (b) => tlv(0x01, new Uint8Array([b ? 0xff : 0x00]));
+const derOctetString = (bytes) => tlv(0x04, bytes);
+const derBitStringN = (bytes, unusedBits) =>
+  tlv(0x03, concatBytes(new Uint8Array([unusedBits]), bytes));
 
 function ecdsaRawToDer(raw) {
   const half = raw.length / 2;
@@ -566,15 +628,26 @@ function toUint8Array(x) {
   return new Uint8Array(x);
 }
 
+function fmtUTC(date) {
+  return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+}
+
 const ATTR_OIDS = {
   C: '2.5.4.6', ST: '2.5.4.8', L: '2.5.4.7',
   O: '2.5.4.10', OU: '2.5.4.11', CN: '2.5.4.3',
 };
 const OID_ECDSA_WITH_SHA384 = '1.2.840.10045.4.3.3';
 
-async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
-  const spki = toUint8Array(publicKeySpki);
+/* X.509 扩展 OID */
+const OID_BASIC_CONSTRAINTS  = '2.5.29.19';
+const OID_KEY_USAGE          = '2.5.29.15';
+const OID_EXT_KEY_USAGE      = '2.5.29.37';
+const OID_SUBJECT_KEY_ID     = '2.5.29.14';
+const OID_AUTHORITY_KEY_ID   = '2.5.29.35';
+const OID_CLIENT_AUTH        = '1.3.6.1.5.5.7.3.2';
 
+/** 由 Subject 属性列表构造 DER Name（RDNSequence） */
+function nameFromAttrs(subjectAttrs) {
   const rdnSeq = subjectAttrs
     .filter((a) => a.value)
     .map((a) => {
@@ -582,7 +655,25 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
       if (!oid) throw new Error('不支持的 Subject 属性: ' + a.key);
       return derSet(derSequence(derOid(oid), derUtf8(a.value)));
     });
-  const subject = derSequence(...rdnSeq);
+  return derSequence(...rdnSeq);
+}
+
+/** UTCTime（1950–2049）或 GeneralizedTime */
+function derTime(date) {
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const y = date.getUTCFullYear();
+  const body = pad(date.getUTCMonth() + 1) + pad(date.getUTCDate()) +
+               pad(date.getUTCHours()) + pad(date.getUTCMinutes()) +
+               pad(date.getUTCSeconds()) + 'Z';
+  if (y >= 1950 && y <= 2049) {
+    return tlv(0x17, textEncoder.encode(pad(y % 100) + body));
+  }
+  return tlv(0x18, textEncoder.encode(pad(y, 4) + body));
+}
+
+async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
+  const spki = toUint8Array(publicKeySpki);
+  const subject = nameFromAttrs(subjectAttrs);
 
   const cri = derSequence(
     derInteger(new Uint8Array([0x00])),
@@ -605,6 +696,175 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
 }
 
+/* ---------------------------------------------------------------------------
+ * 本地 X.509 v3 证书签发
+ * 使用上级 CA 的不可导出私钥（CryptoKey）在浏览器内对 TBSCertificate 签名。
+ * ------------------------------------------------------------------------- */
+async function issueCertificate({
+  subjectAttrs,
+  subjectSpki,
+  issuerAttrs,
+  issuerSpki,
+  issuerPrivateKey,
+  isCa,
+  pathLen,
+}) {
+  const subjectDer = nameFromAttrs(subjectAttrs);
+  const issuerDer = nameFromAttrs(issuerAttrs);
+  const spkiDer = toUint8Array(subjectSpki);
+
+  // 序列号：16 字节随机，最高位清零保证正整数
+  const serial = new Uint8Array(16);
+  crypto.getRandomValues(serial);
+  serial[0] &= 0x7f;
+  if (serial[0] === 0) serial[0] = 0x01;
+
+  const nowMs = Date.now();
+  const notBefore = new Date(nowMs - 60 * 1000);
+  const notAfter = new Date(nowMs + 36500 * 86400 * 1000);
+
+  // ecdsa-with-SHA384，RFC 5758 规定参数必须省略
+  const sigAlg = derSequence(derOid(OID_ECDSA_WITH_SHA384));
+
+  // SKI / AKI：取各自 SPKI 的 SHA-1（演示用，RFC 5280 严格定义是对 BIT STRING 内容取摘要）
+  const ski = new Uint8Array(await crypto.subtle.digest('SHA-1', spkiDer));
+  const aki = new Uint8Array(
+    await crypto.subtle.digest('SHA-1', toUint8Array(issuerSpki))
+  );
+
+  const ext = (oid, critical, value) => derSequence(
+    ...(critical
+      ? [derOid(oid), derBool(true), derOctetString(value)]
+      : [derOid(oid), derOctetString(value)])
+  );
+
+  const exts = [];
+
+  // basicConstraints
+  exts.push(ext(
+    OID_BASIC_CONSTRAINTS,
+    true,
+    isCa
+      ? derSequence(derBool(true), derInteger(new Uint8Array([pathLen])))
+      : derSequence()
+  ));
+
+  // keyUsage
+  exts.push(ext(
+    OID_KEY_USAGE,
+    true,
+    isCa
+      ? derBitStringN(new Uint8Array([0x06]), 1)  // keyCertSign(5) | cRLSign(6)
+      : derBitStringN(new Uint8Array([0x80]), 7)  // digitalSignature(0)
+  ));
+
+  // extendedKeyUsage：仅叶子证书
+  if (!isCa) {
+    exts.push(ext(OID_EXT_KEY_USAGE, false, derSequence(derOid(OID_CLIENT_AUTH))));
+  }
+
+  // subjectKeyIdentifier
+  exts.push(ext(OID_SUBJECT_KEY_ID, false, derOctetString(ski)));
+
+  // authorityKeyIdentifier（keyIdentifier [0] IMPLICIT OCTET STRING）
+  exts.push(ext(OID_AUTHORITY_KEY_ID, false, derSequence(tlv(0x80, aki))));
+
+  // TBSCertificate
+  const tbs = derSequence(
+    tlv(0xa0, derInteger(new Uint8Array([0x02]))),  // version v3
+    derInteger(serial),
+    sigAlg,
+    issuerDer,
+    derSequence(derTime(notBefore), derTime(notAfter)),
+    subjectDer,
+    spkiDer,
+    tlv(0xa3, derSequence(...exts))                 // extensions [3] EXPLICIT
+  );
+
+  const rawSig = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-384' }, issuerPrivateKey, tbs)
+  );
+
+  const certDer = derSequence(tbs, sigAlg, derBitString(ecdsaRawToDer(rawSig)));
+
+  return {
+    pem: pemFromDer(certDer, 'CERTIFICATE'),
+    serial: Array.from(serial, (b) => b.toString(16).padStart(2, '0'))
+      .join(':').toUpperCase(),
+    notBefore: fmtUTC(notBefore),
+    notAfter: fmtUTC(notAfter),
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * 远端签发（dummy API）
+ * ------------------------------------------------------------------------- */
+const OTMC_SIGN_ENDPOINT = 'https://otmc.example.com/api/v1/client/space-1st-level/sign';
+const USE_MOCK_SIGN_SERVER = true; // ← 接入真实服务端时改成 false
+
+const MOCK_CERT_PEM = [
+  '-----BEGIN CERTIFICATE-----',
+  'MOCKCERTIFICATEFROMOTMCSERVERREPLACEWITHREALRESPONSEMOCKCERTIFICATE',
+  'FROMOTMCSERVERREPLACEWITHREALRESPONSEMOCKCERTIFICATEFROMOTMCSERVER',
+  '-----END CERTIFICATE-----',
+].join('\n');
+
+/**
+ * 向 OTMC 总服务器请求签发 1 级 CA 证书。
+ * 真实实现：POST CSR 到签发接口，服务端用 client-broker-inter 私钥签发后返回 PEM。
+ */
+async function requestRemoteSignature(csrPem, type) {
+  const payload = {
+    csr: csrPem,
+    profile: 'space-1st-level',
+    keyUsage: ['keyCertSign', 'cRLSign'],
+    basicConstraints: { cA: true, pathLen: type.pathLen },
+    requestedDays: 36500,
+    client: 'otmc-browser-leader',
+  };
+
+  // ---------- dummy 模式：不发真实请求，返回占位证书 ----------
+  if (USE_MOCK_SIGN_SERVER) {
+    console.info('[mock] POST', OTMC_SIGN_ENDPOINT, payload);
+    await new Promise((r) => setTimeout(r, 900));
+    const nowMs = Date.now();
+    return {
+      pem: MOCK_CERT_PEM,
+      serial: '00:MOCK:00:00:00:01',
+      issuer: 'CN=OTMC Client Broker Intermediate CA（远端 · mock）',
+      notBefore: fmtUTC(new Date(nowMs - 60 * 1000)),
+      notAfter: fmtUTC(new Date(nowMs + 36500 * 86400 * 1000)),
+      isMock: true,
+    };
+  }
+
+  // ---------- 真实请求 ----------
+  const resp = await fetch(OTMC_SIGN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`远端签发失败：HTTP ${resp.status} ${text}`);
+  }
+
+  const data = await resp.json();
+  const pem = data.certificate || data.certPem || data.crt;
+  if (!pem) throw new Error('远端响应缺少 certificate 字段');
+
+  return {
+    pem,
+    serial: data.serial || '',
+    issuer: data.issuer || '',
+    notBefore: data.notBefore || '',
+    notAfter: data.notAfter || '',
+    isMock: false,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 证书类型定义（与 bash 脚本一一对应）
 // ---------------------------------------------------------------------------
@@ -620,6 +880,7 @@ const CERT_TYPES = {
     },
     isCa: true,
     pathLen: 2,
+    remote: true,
     caName: 'client-broker-inter',
     caLabel: 'Client Broker Intermediate CA',
     extDescription: 'basicConstraints=critical,CA:TRUE,pathlen:2、keyUsage=critical,keyCertSign,cRLSign',
@@ -642,6 +903,7 @@ const CERT_TYPES = {
     },
     isCa: true,
     pathLen: 0,
+    remote: false,
     caName: 'client-space-top',
     caLabel: 'Space 1st-Level CA',
     extDescription: 'basicConstraints=critical,CA:TRUE,pathlen:0、keyUsage=critical,keyCertSign,cRLSign',
@@ -664,6 +926,7 @@ const CERT_TYPES = {
     },
     isCa: false,
     pathLen: null,
+    remote: false,
     caName: 'client-space-inter',
     caLabel: 'Space 2nd-Level CA',
     extDescription: 'basicConstraints=CA:FALSE、keyUsage=critical,digitalSignature、extendedKeyUsage=clientAuth',
@@ -793,9 +1056,16 @@ const app = createApp({
       publicKeyPem: '',
       subject: '',
       createdAt: '',
+      certPem: '',
+      certSerial: '',
+      certIssuer: '',
+      certNotBefore: '',
+      certNotAfter: '',
+      certIsMock: false,
     });
 
     const loading = ref(false);
+    const signing = ref(false);
     const hasStored = ref(false);
     const cryptoOk = ref(true);
     const indexedDbOk = ref(true);
@@ -822,6 +1092,22 @@ const app = createApp({
   -extfile ${t.filePrefix}.ext \\
   -extensions v3_req`;
     });
+
+    /* 按证书类型变化的「签发」按钮文案 */
+    const signButtonLabel = computed(() => {
+      const k = currentTypeKey.value;
+      if (k === 'space-top') return '从 OTMC 总服务器上获得签发证书';
+      if (k === 'space-inter') return '用本机 1 级密钥签发证书';
+      return '用本机 2 级密钥签发证书';
+    });
+
+    function resetResult() {
+      Object.assign(result, {
+        csrPem: '', publicKeyPem: '', subject: '', createdAt: '',
+        certPem: '', certSerial: '', certIssuer: '',
+        certNotBefore: '', certNotAfter: '', certIsMock: false,
+      });
+    }
 
     function fillFormFromAttrs(attrs) {
       if (!Array.isArray(attrs)) return;
@@ -864,6 +1150,12 @@ const app = createApp({
           publicKeyPem: pemFromDer(toUint8Array(record.publicKeySpki), 'PUBLIC KEY'),
           subject: record.subject || '',
           createdAt: record.createdAt || '',
+          certPem: record.certPem || '',
+          certSerial: record.certSerial || '',
+          certIssuer: record.certIssuer || '',
+          certNotBefore: record.certNotBefore || '',
+          certNotAfter: record.certNotAfter || '',
+          certIsMock: false,
         });
 
         hasStored.value = true;
@@ -882,7 +1174,7 @@ const app = createApp({
       const t = currentType.value;
 
       Object.assign(form, t.subjectDefaults);
-      Object.assign(result, { csrPem: '', publicKeyPem: '', subject: '', createdAt: '' });
+      resetResult();
 
       const stored = await checkStored();
 
@@ -961,6 +1253,8 @@ const app = createApp({
           publicKeyPem: pemFromDer(spki, 'PUBLIC KEY'),
           subject,
           createdAt,
+          certPem: '', certSerial: '', certIssuer: '',
+          certNotBefore: '', certNotAfter: '', certIsMock: false,
         });
 
         hasStored.value = true;
@@ -978,15 +1272,104 @@ const app = createApp({
       await loadFromDb(false);
     }
 
+    /* ===== 签发证书 ===== */
+    async function onSign() {
+      const t = currentType.value;
+
+      if (!result.csrPem) {
+        message.warning('请先生成或从 IndexedDB 加载 CSR');
+        return;
+      }
+
+      signing.value = true;
+      try {
+        let cert;
+
+        if (t.remote) {
+          /* --- 1 级 CA：由 OTMC 总服务器签发 --- */
+          cert = await requestRemoteSignature(result.csrPem, t);
+
+          // 若本机已有该类型的密钥记录，把证书一并写回
+          try {
+            const selfRec = await dbGet(t.recordKey);
+            if (selfRec) {
+              selfRec.certPem = cert.pem;
+              selfRec.certSerial = cert.serial;
+              selfRec.certIssuer = cert.issuer;
+              selfRec.certNotBefore = cert.notBefore;
+              selfRec.certNotAfter = cert.notAfter;
+              selfRec.certIssuedAt = new Date().toISOString();
+              await dbPut(t.recordKey, selfRec);
+            }
+          } catch (e) {
+            console.warn('写回证书失败（不影响本次签发结果）', e);
+          }
+        } else {
+          /* --- 2 级 CA / 叶子证书：用本机上级 CA 私钥本地签发 --- */
+          const selfRec = await dbGet(t.recordKey);
+          if (!selfRec || !selfRec.publicKeySpki) {
+            throw new Error('本机没有找到该类型的公钥记录，请先点击「生成密钥对与 CSR」');
+          }
+
+          const parentRec = await dbGet(t.caName);
+          if (!parentRec || !parentRec.privateKey) {
+            throw new Error(
+              `本机没有找到上级 CA（${t.caName}）的私钥。请先切换到「${CERT_TYPES[t.caName] ? CERT_TYPES[t.caName].label : t.caName}」，` +
+              `生成并保存其密钥后再回来签发。`
+            );
+          }
+
+          cert = await issueCertificate({
+            subjectAttrs: selfRec.subjectAttrs,
+            subjectSpki: toUint8Array(selfRec.publicKeySpki),
+            issuerAttrs: parentRec.subjectAttrs,
+            issuerSpki: toUint8Array(parentRec.publicKeySpki),
+            issuerPrivateKey: parentRec.privateKey,
+            isCa: t.isCa,
+            pathLen: t.pathLen,
+          });
+
+          cert.issuer = parentRec.subject ||
+            parentRec.subjectAttrs.filter((a) => a.value).map((a) => `/${a.key}=${a.value}`).join('');
+
+          // 把证书写回自身记录
+          selfRec.certPem = cert.pem;
+          selfRec.certSerial = cert.serial;
+          selfRec.certIssuer = cert.issuer;
+          selfRec.certNotBefore = cert.notBefore;
+          selfRec.certNotAfter = cert.notAfter;
+          selfRec.certIssuedAt = new Date().toISOString();
+          await dbPut(t.recordKey, selfRec);
+        }
+
+        Object.assign(result, {
+          certPem: cert.pem,
+          certSerial: cert.serial || '',
+          certIssuer: cert.issuer || '',
+          certNotBefore: cert.notBefore || '',
+          certNotAfter: cert.notAfter || '',
+          certIsMock: !!cert.isMock,
+        });
+
+        message.success(
+          t.remote
+            ? `${t.label} 已从 OTMC 总服务器获得签发证书`
+            : `${t.label} 已用本机 ${t.caLabel} 密钥完成签发`
+        );
+      } catch (e) {
+        console.error(e);
+        message.error('签发失败：' + (e && e.message ? e.message : e));
+      } finally {
+        signing.value = false;
+      }
+    }
+
     async function onClear() {
       const t = currentType.value;
       try {
         await dbDelete(t.recordKey);
         hasStored.value = false;
-        Object.assign(result, {
-          csrPem: '', publicKeyPem: '',
-          subject: '', createdAt: '',
-        });
+        resetResult();
         message.success(`已清除 ${t.label} 的 IndexedDB 密钥`);
       } catch (e) {
         console.error(e);
@@ -1048,11 +1431,11 @@ const app = createApp({
       // 布局 / 导航
       isMobile, collapsed, drawerOpen, selectedKeys, toggleMenu,
       // 表单
-      subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
+      subjectFields, form, result, loading, signing, hasStored, cryptoOk, indexedDbOk,
       hasResult, subjectString,
-      typeOptions, currentTypeKey, currentType, signCommand,
+      typeOptions, currentTypeKey, currentType, signCommand, signButtonLabel,
       dbName: DB_NAME,
-      onTypeChange, onGenerate, onLoad, onClear,
+      onTypeChange, onGenerate, onLoad, onSign, onClear,
       copyText, downloadFile,
     };
   },
