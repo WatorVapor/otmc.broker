@@ -524,7 +524,7 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
 // ---------------------------------------------------------------------------
 const CERT_TYPES = {
   'space-top': {
-    label: 'Space 1st-Level CA',
+    label: '空间1级证书Space 1st-Level CA',
     hint: '由 Client Broker Intermediate CA（client-broker-inter）签发，自身 CA:TRUE、pathlen:2，用于签发 Space 2nd-Level CA。对应脚本第 3 节。',
     recordKey: 'client-space-top',
     filePrefix: 'client-space-top',
@@ -546,7 +546,7 @@ const CERT_TYPES = {
     ].join('\n'),
   },
   'space-inter': {
-    label: 'Space 2nd-Level CA',
+    label: '空间2级证书Space 2nd-Level CA',
     hint: '由 Space 1st-Level CA（client-space-top）签发，自身 CA:TRUE、pathlen:0，用于签发 Client Leaf 终端证书。对应脚本第 4 节。',
     recordKey: 'client-space-inter',
     filePrefix: 'client-space-inter',
@@ -568,7 +568,7 @@ const CERT_TYPES = {
     ].join('\n'),
   },
   'client-leaf': {
-    label: 'Client Leaf',
+    label: '空间叶子证书Client Leaf',
     hint: '由 Space 2nd-Level CA（client-space-inter）签发，用于 MQTT mTLS 客户端身份。',
     recordKey: 'client-space-leaf',
     filePrefix: 'client-space-leaf',
