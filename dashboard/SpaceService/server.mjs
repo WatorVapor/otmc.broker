@@ -38,32 +38,13 @@ const PROFILE = {
 
 // 简单令牌鉴权（生产请替换为 OIDC / mTLS）
 function authenticateBearer(req, res, next) {
-  console.log('authenticateBearer req.path:=<',req.path,'>')
-  console.log('authenticateBearer req.method:=<',req.method,'>')
-  console.log('authenticateBearer req.headers:=<', req.headers, '>')
-  console.log('authenticateBearer req.body:=<', JSON.stringify(req.body), '>')
-/*
-  const headerAuth = req.get('authorization') || '';
-  console.log('authenticateBearer headerAuth:=<',headerAuth,'>')
-
-  const tok = headerAuth.startsWith('Bearer ') ? headerAuth.slice(7) : '';
-  if (!tok) return res.status(401).json({ error: 'missing token' });
-  if (!Object.values(PROFILE).some(p => p.allowedBearer === tok))
-    return res.status(403).json({ error: 'invalid token' });
-  req.token = tok;
-  next();
-*/
   next();
 }
 
-app.get('/sign/client/space-1st-level', authenticateBearer, async (req, res) => {
-  console.log('authenticateBearer req.path:=<',req.path,'>')
-  console.log('authenticateBearer req.method:=<',req.method,'>')
-
-})
-
 app.post('/sign/client/space-1st-level', authenticateBearer, async (req, res) => {
   const { profile, csr } = req.body || {};
+  console.log('profile:=<',profile,'>');
+  console.log('csr:=<',csr,'>');
   const p = PROFILE[profile];
   if (!p) return res.status(400).json({ error: 'unknown profile' });
   if (typeof csr !== 'string' || !csr.includes('BEGIN CERTIFICATE REQUEST'))
