@@ -799,8 +799,8 @@ async function issueCertificate({
 /* ---------------------------------------------------------------------------
  * 远端签发（dummy API）
  * ------------------------------------------------------------------------- */
-const OTMC_SIGN_ENDPOINT = '/api/v1/space/sign/client/space-1st-level';
-const USE_MOCK_SIGN_SERVER = true; // ← 接入真实服务端时改成 false
+const OTMC_SIGN_ENDPOINT = 'https://otmc-space-api.wator.xyz/api/v1/space/sign/client/space-1st-level';
+const USE_MOCK_SIGN_SERVER = false; // ← 接入真实服务端时改成 false
 
 const MOCK_CERT_PEM = [
   '-----BEGIN CERTIFICATE-----',
@@ -845,6 +845,9 @@ async function requestRemoteSignature(csrPem, type) {
     credentials: 'include',
     body: JSON.stringify(payload),
   });
+  if (resp.redirected) {
+    throw new Error(`请求被意外重定向至 ${resp.url}，请检查 Cloudflare 的 Redirect Rules 或 Page Rules`);
+  }
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');

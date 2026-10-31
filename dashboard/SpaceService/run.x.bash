@@ -1,0 +1,11 @@
+#!/bin/bash
+docker run -it \
+    -v $(pwd):/app \
+    -v /etc/group:/etc/group:ro \
+    -v /etc/passwd:/etc/passwd:ro \
+    -v /dev/shm/otmc-dashboard:/var/run/otmc \
+    -v ${HOME}:${HOME} \
+    --network host \
+    -w /app \
+    node:26 \
+    /bin/bash -c 'umask 000; exec /bin/bash'

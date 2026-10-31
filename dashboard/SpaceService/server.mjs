@@ -7,7 +7,23 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 const exec = promisify(execFile);
+import { createServer } from 'node:http';
+
+const SOCKET_PATH = '/var/run/otmc/space.api.sock';
+
+// 清理可能存在的旧 socket 文件
+await fs.rm(SOCKET_PATH, { force: true }).catch(() => {});
+
 const app = express();
+
+const server = createServer(app);
+
+server.listen(SOCKET_PATH, () => {
+  console.log(`sign-api ready on unix socket: ${SOCKET_PATH}`);
+  // 设置 socket 文件权限（可选，根据需要调整）
+  fs.chmod(SOCKET_PATH, 0o777).catch(console.error);
+});
+
 app.use(express.json({ limit: '64kb' }));
 
 const KEY_DIR = process.env.KEY_DIR || './pki';
@@ -22,16 +38,31 @@ const PROFILE = {
 
 // 简单令牌鉴权（生产请替换为 OIDC / mTLS）
 function authenticateBearer(req, res, next) {
-  const h = req.get('authorization') || '';
-  const tok = h.startsWith('Bearer ') ? h.slice(7) : '';
+  console.log('authenticateBearer req.path:=<',req.path,'>')
+  console.log('authenticateBearer req.method:=<',req.method,'>')
+  console.log('authenticateBearer req.headers:=<', req.headers, '>')
+  console.log('authenticateBearer req.body:=<', JSON.stringify(req.body), '>')
+/*
+  const headerAuth = req.get('authorization') || '';
+  console.log('authenticateBearer headerAuth:=<',headerAuth,'>')
+
+  const tok = headerAuth.startsWith('Bearer ') ? headerAuth.slice(7) : '';
   if (!tok) return res.status(401).json({ error: 'missing token' });
   if (!Object.values(PROFILE).some(p => p.allowedBearer === tok))
     return res.status(403).json({ error: 'invalid token' });
   req.token = tok;
   next();
+*/
+  next();
 }
 
-app.post('/v1/sign-ca', authenticateBearer, async (req, res) => {
+app.get('/sign/client/space-1st-level', authenticateBearer, async (req, res) => {
+  console.log('authenticateBearer req.path:=<',req.path,'>')
+  console.log('authenticateBearer req.method:=<',req.method,'>')
+
+})
+
+app.post('/sign/client/space-1st-level', authenticateBearer, async (req, res) => {
   const { profile, csr } = req.body || {};
   const p = PROFILE[profile];
   if (!p) return res.status(400).json({ error: 'unknown profile' });
@@ -100,4 +131,22 @@ app.post('/v1/sign-ca', authenticateBearer, async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 8443, () => console.log('sign-api ready'));
+// ===== 新增：兜底日志 + 404 =====
+app.use((req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || '-';
+  console.warn(
+    `[unhandled] ${new Date().toISOString()} ${req.method} ${req.originalUrl} ` +
+    `ip=${ip} auth=${req.get('authorization') ? 'yes' : 'no'}`
+  );
+  res.status(404).json({ error: 'not found' });
+});
+
+// 更细粒度的未处理错误（如 JSON 解析失败、body 超限等）
+app.use((err, req, res, next) => {
+  console.error(
+    `[error] ${new Date().toISOString()} ${req.method} ${req.originalUrl} ` +
+    `ip=${req.ip} err=${err?.name}: ${err?.message}`
+  );
+  if (res.headersSent) return next(err);
+  res.status(err?.status || 500).json({ error: 'internal error' });
+});
