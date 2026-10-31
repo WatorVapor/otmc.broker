@@ -6,10 +6,14 @@ import { promisify } from 'node:util';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+
+const CLIENT_ROOT = '/usr/local/etc/certs/client_cert';
+const TEMP_DIR = '/var/run/otmc';
+
 const exec = promisify(execFile);
 import { createServer } from 'node:http';
 
-const SOCKET_PATH = '/var/run/otmc/space.api.sock';
+const SOCKET_PATH = `${TEMP_DIR}/space.api.sock`;
 
 // 清理可能存在的旧 socket 文件
 await fs.rm(SOCKET_PATH, { force: true }).catch(() => {});
@@ -26,9 +30,13 @@ server.listen(SOCKET_PATH, () => {
 
 app.use(express.json({ limit: '64kb' }));
 
-const KEY_DIR = process.env.KEY_DIR || './pki';
+const SIGN_KEY_PATH = `${CLIENT_ROOT}/client-broker-inter.key`;
+const SIGN_CA_PATH = `${CLIENT_ROOT}/client-broker-inter.crt`;
+const SIGN_SRL_PATH = `${CLIENT_ROOT}/client-broker-inter.srl`;
+const SIGN_EXT_PATH = `${CLIENT_ROOT}/client-broker-inter.ext`;
+
 const PROFILE = {
-  'client-space-top': {
+  'space-1st-level': {
     caName: 'client-broker-inter',
     cnPattern: /^OTMC-Client_Intermediate_4_Space_1st_level_Cert$/,
     extFile: 'client-space-top.ext',
@@ -42,52 +50,51 @@ function authenticateBearer(req, res, next) {
 }
 
 app.post('/sign/client/space-1st-level', authenticateBearer, async (req, res) => {
-  const { profile, csr } = req.body || {};
-  console.log('profile:=<',profile,'>');
+  const {  csr, profile} = req.body || {};
   console.log('csr:=<',csr,'>');
-  const p = PROFILE[profile];
-  if (!p) return res.status(400).json({ error: 'unknown profile' });
-  if (typeof csr !== 'string' || !csr.includes('BEGIN CERTIFICATE REQUEST'))
-    return res.status(400).json({ error: 'invalid csr' });
+  const csrSha256 = crypto.createHash('sha256').update(csr, 'utf8').digest('hex');
+  console.log('csrSha256:=<',csrSha256,'>');
+  const run_ws = `${TEMP_DIR}/${csrSha256}`
 
-  const id = crypto.randomUUID();
-  const dir = path.join(KEY_DIR, 'tmp');
-  await fs.mkdir(dir, { recursive: true });
-  const csrPath = path.join(dir, `${id}.csr`);
-  const crtPath = path.join(dir, `${id}.crt`);
+  const reqCSRPath = `${run_ws}/request_temp.csr`;
+  const respCRTPath =  `${run_ws}/response_temp.crt`;
+  const matchProfile = PROFILE[profile];
 
   try {
-    await fs.writeFile(csrPath, csr, 'utf8');
+    await fs.mkdir(run_ws, { recursive: true });
+    await fs.writeFile(reqCSRPath, csr, 'utf8');
 
     // 1) 校验 CSR 自签名
-    await exec('openssl', ['req', '-in', csrPath, '-noout', '-verify']);
+    await exec('openssl', ['req', '-in', reqCSRPath, '-noout', '-verify']);
 
     // 2) 解析 Subject，校验 CN
     const { stdout: subjOut } = await exec('openssl', [
-      'req', '-in', csrPath, '-noout', '-subject', '-nameopt', 'RFC2253'
+      'req', '-in', reqCSRPath, '-noout', '-subject', '-nameopt', 'RFC2253'
     ]);
     const cnMatch = subjOut.match(/CN=([^,]+)/);
-    if (!cnMatch || !p.cnPattern.test(cnMatch[1]))
+    console.log('cnMatch:=<',cnMatch,'>');
+    if (!cnMatch || !matchProfile.cnPattern.test(cnMatch[1]))
       return res.status(400).json({ error: 'subject policy violation' });
 
     // 3) 用 CA 私钥签发
     await exec('openssl', [
       'x509', '-req',
-      '-in', csrPath,
-      '-CA', path.join(KEY_DIR, `${p.caName}.crt`),
-      '-CAkey', path.join(KEY_DIR, `${p.caName}.key`),
-      '-CAserial', path.join(KEY_DIR, `${p.caName}.srl`),
+      '-in', reqCSRPath,
+      '-CA', SIGN_CA_PATH,
+      '-CAkey', SIGN_KEY_PATH,
+      '-CAserial', SIGN_SRL_PATH,
       '-CAcreateserial',
       '-sha384', '-days', '36500',
-      '-extfile', path.join(KEY_DIR, p.extFile),
+      '-extfile', SIGN_EXT_PATH,
       '-extensions', 'v3_req',
-      '-out', crtPath,
+      '-out', respCRTPath,
     ]);
 
-    const certificate = await fs.readFile(crtPath, 'utf8');
-    const caCert = await fs.readFile(path.join(KEY_DIR, `${p.caName}.crt`), 'utf8');
+    const certificate = await fs.readFile(respCRTPath, 'utf8');
+    console.log('certificate:=,',certificate,'>');
+    const caCert = await fs.readFile(SIGN_CA_PATH, 'utf8');
 
-    const { stdout: info } = await exec('openssl', ['x509', '-in', crtPath, '-noout', '-serial', '-dates', '-issuer']);
+    const { stdout: info } = await exec('openssl', ['x509', '-in', respCRTPath, '-noout', '-serial', '-dates', '-issuer']);
     const serial = (info.match(/serial=([0-9A-F]+)/) || [])[1] || '';
     const nb = (info.match(/notBefore=(.+)/) || [])[1] || '';
     const na = (info.match(/notAfter=(.+)/)  || [])[1] || '';
@@ -101,15 +108,16 @@ app.post('/sign/client/space-1st-level', authenticateBearer, async (req, res) =>
       notBefore: nb,
       notAfter: na,
       issuerCN: 'OTMC-Client_Intermediate_4_Client_Broker_Inter_Cert',
-      requestId: id,
+      requestId: csrSha256,
     });
   } catch (e) {
     console.error('sign failed', e);
     res.status(500).json({ error: 'sign failed', detail: String(e?.message || e) });
   } finally {
-    await fs.rm(csrPath, { force: true }).catch(() => {});
-    await fs.rm(crtPath, { force: true }).catch(() => {});
+    await fs.rm(reqCSRPath, { force: true }).catch(() => {});
+    await fs.rm(respCRTPath, { force: true }).catch(() => {});
   }
+  res.end();
 });
 
 // ===== 新增：兜底日志 + 404 =====

@@ -855,6 +855,7 @@ async function requestRemoteSignature(csrPem, type) {
   }
 
   const data = await resp.json();
+  console.log('requestRemoteSignature:: data:=<',data,'>');
   const pem = data.certificate || data.certPem || data.crt;
   if (!pem) throw new Error('远端响应缺少 certificate 字段');
 

@@ -4,7 +4,7 @@ docker run -it \
     -v /etc/group:/etc/group:ro \
     -v /etc/passwd:/etc/passwd:ro \
     -v /dev/shm/otmc-dashboard:/var/run/otmc \
-    -v /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro \
+    -v /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert \
     -v ${HOME}:${HOME} \
     --network host \
     -w /app \
