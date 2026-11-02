@@ -1100,7 +1100,7 @@ const app = createApp({
     /* 按证书类型变化的「签发」按钮文案 */
     const signButtonLabel = computed(() => {
       const k = currentTypeKey.value;
-      if (k === 'space-top') return '从 OTMC 总服务器上获得签发证书';
+      if (k === 'space-top') return '获取 OTMC 签发证书';
       if (k === 'space-inter') return '用本机 1 级密钥签发证书';
       return '用本机 2 级密钥签发证书';
     });
@@ -1357,7 +1357,7 @@ const app = createApp({
 
         message.success(
           t.remote
-            ? `${t.label} 已从 OTMC 总服务器获得签发证书`
+            ? `${t.label} 获取 OTMC 签发证书`
             : `${t.label} 已用本机 ${t.caLabel} 密钥完成签发`
         );
       } catch (e) {

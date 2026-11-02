@@ -32,8 +32,8 @@ app.use(express.json({ limit: '64kb' }));
 
 const SIGN_KEY_PATH = `${CLIENT_ROOT}/client-broker-inter.key`;
 const SIGN_CA_PATH = `${CLIENT_ROOT}/client-broker-inter.crt`;
-const SIGN_SRL_PATH = `${CLIENT_ROOT}/client-broker-inter.srl`;
-const SIGN_EXT_PATH = `${CLIENT_ROOT}/client-broker-inter.ext`;
+const SIGN_SRL_PATH = `${CLIENT_ROOT}/client-space-top.srl`;
+const SIGN_EXT_PATH = `${CLIENT_ROOT}/client-space-top.ext`;
 
 const PROFILE = {
   'space-1st-level': {
