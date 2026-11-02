@@ -229,7 +229,7 @@
           ></a-alert>
           <a-alert
             v-if="!indexedDbOk" type="error" show-icon style="margin-bottom: 16px"
-            message="当前环境不支持 IndexedDB，无法安全存储密钥"
+            :message="dbError || '当前环境不支持 IndexedDB，无法安全存储密钥'"
           ></a-alert>
 
           <!-- ① 终端证书与 Subject -->
@@ -554,23 +554,113 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
 }
 
+/* ============================================================
+ *  IndexedDB 层 —— 共用库、能自愈
+ *
+ *  - DB_VERSION 是全站统一版本；库不存在时按此版本创建。
+ *  - 如果库里已有但缺少本页需要的 store（历史遗留库，比如其他
+ *    页面先用版本 1 建了库、且没建这个 store），不报错，而是
+ *    在 **当前库版本基础上 +1** 升级一次，把 STORE_NAMES 全部
+ *    补齐，然后正常返回可用连接。
+ *  - 如果打开时抛 VersionError（库里版本比 DB_VERSION 高，
+ *    通常是自愈 +1 后版本被抬高了），则改用「不带版本号」打开
+ *    （即取当前版本），再检查 store；仍缺则同样 +1 补建。
+ *  - 所有升级路径的 onupgradeneeded 都用 ensureAllStores 建全
+ *    STORE_NAMES，避免任何页面先打开时漏建。
+ *
+ *  提示：其他页面理想情况下也用「不带版本号 open」+ 同一份
+ *  STORE_NAMES，这样任何页面先打开都不会把别人卡在 VersionError。
+ * ============================================================ */
 const DB_NAME = 'omtc-mtls-keystore';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 全站统一；库不存在时按此版本创建
+
+// 全站所有页面共用的一份 store 清单（各页面升级时都 ensure 同一份）
+const STORE_NAMES = [
+  'browser_follower_cert_and_keys',
+  // 如有其他 store，按实际情况补全，例如：
+  // 'browser_leader_cert_and_keys',
+  // 'browser_space_ca_cert_and_keys',
+];
+
 const STORE_NAME = 'browser_follower_cert_and_keys';
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) return reject(new Error('IndexedDB 不可用'));
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+let dbPromise = null;
+
+function ensureAllStores(db) {
+  STORE_NAMES.forEach((name) => {
+    if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
   });
+}
+
+function hasAllStores(db) {
+  return STORE_NAMES.every((n) => db.objectStoreNames.contains(n));
+}
+
+function openRaw(name, version) {
+  return new Promise((resolve, reject) => {
+    let req;
+    try {
+      req = (version == null) ? indexedDB.open(name) : indexedDB.open(name, version);
+    } catch (e) {
+      return reject(e);
+    }
+
+    // 任何升级路径都建全 STORE_NAMES
+    req.onupgradeneeded = () => ensureAllStores(req.result);
+
+    req.onblocked = () => {
+      const err = new Error('IndexedDB 升级被其他标签页阻塞，请关闭本站其他标签页后刷新重试');
+      err.name = 'BlockedError';
+      reject(err);
+    };
+    req.onerror = () => reject(req.error || new Error('IndexedDB 打开失败'));
+    req.onsuccess = () => resolve(req.result);
+  });
+}
+
+async function openWithRepair() {
+  let db;
+
+  // 1) 按统一版本打开；库不存在会顺带创建并建全 store
+  try {
+    db = await openRaw(DB_NAME, DB_VERSION);
+  } catch (e) {
+    if (e && e.name === 'VersionError') {
+      // 库里版本比 DB_VERSION 高（自愈 +1 后常见），按当前版本打开
+      db = await openRaw(DB_NAME);
+    } else {
+      throw e;
+    }
+  }
+
+  // 2) store 齐全 → 直接用
+  if (hasAllStores(db)) return db;
+
+  // 3) 缺 store → 在当前版本基础上 +1 升级补建
+  //    IndexedDB 无法在已打开的连接上新增 object store，只能走升级
+  const nextVersion = db.version + 1;
+  db.close();
+
+  const db2 = await openRaw(DB_NAME, nextVersion);
+
+  if (!hasAllStores(db2)) {
+    db2.close();
+    throw new Error('IndexedDB 补建 object store 失败');
+  }
+  return db2;
+}
+
+function openDB() {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = openWithRepair().then((db) => {
+    db.onversionchange = () => { db.close(); dbPromise = null; };
+    return db;
+  });
+
+  // 失败不缓存，允许用户刷新/重试后重新打开
+  dbPromise.catch(() => { dbPromise = null; });
+  return dbPromise;
 }
 
 async function dbGet(key) {
@@ -590,6 +680,7 @@ async function dbPut(key, value) {
     tx.objectStore(STORE_NAME).put(value, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('写入事务被中止'));
   });
 }
 
@@ -600,6 +691,7 @@ async function dbDelete(key) {
     tx.objectStore(STORE_NAME).delete(key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('删除事务被中止'));
   });
 }
 
@@ -667,6 +759,7 @@ const app = createApp({
     const hasStored = ref(false);
     const cryptoOk = ref(true);
     const indexedDbOk = ref(true);
+    const dbError = ref('');
 
     const hasResult = computed(() => !!(result.csrPem || result.publicKeyPem));
 
@@ -778,7 +871,7 @@ const app = createApp({
         return;
       }
       if (!indexedDbOk.value) {
-        message.error('IndexedDB 不可用，无法安全存储密钥');
+        message.error(dbError.value || 'IndexedDB 不可用，无法安全存储密钥');
         return;
       }
 
@@ -857,8 +950,10 @@ const app = createApp({
       try {
         await openDB();
         indexedDbOk.value = true;
+        dbError.value = '';
       } catch (e) {
         indexedDbOk.value = false;
+        dbError.value = (e && e.message) ? e.message : String(e);
         console.warn('IndexedDB 不可用', e);
       }
 
@@ -877,7 +972,7 @@ const app = createApp({
 
     return {
       isMobile, collapsed, drawerOpen, selectedKeys, toggleMenu,
-      subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk,
+      subjectFields, form, result, loading, hasStored, cryptoOk, indexedDbOk, dbError,
       hasResult, subjectString,
       dbName: DB_NAME,
       onGenerate, onLoad, onClear,
