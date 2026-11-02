@@ -621,6 +621,153 @@ function pemFromDer(der, label) {
   return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`;
 }
 
+/* ===========================================================================
+ * 极简 X.509 / DER 解析（仅用于展示证书元数据：serial / issuer / 有效期）
+ * 不参与证书签发逻辑，只读取 PEM 内容。
+ * ========================================================================= */
+
+function readTLV(buf, offset) {
+  const start = offset;
+  const tag = buf[offset++];
+  let len = buf[offset++];
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    len = 0;
+    for (let i = 0; i < n; i++) len = (len << 8) | buf[offset++];
+  }
+  const valueStart = offset;
+  const valueEnd = offset + len;
+  return { tag, len, valueStart, valueEnd, rawStart: start, rawEnd: valueEnd };
+}
+
+function decodeDerString(tag, bytes) {
+  if (tag === 0x1e) { // BMPString (UTF-16BE)
+    let s = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      s += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    }
+    return s;
+  }
+  // UTF8String / PrintableString / IA5String / TeletexString 等按 UTF-8 兜底
+  return new TextDecoder().decode(bytes);
+}
+
+function decodeOid(buf, tlv) {
+  const bytes = buf.subarray(tlv.valueStart, tlv.valueEnd);
+  const parts = [];
+  let v = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    v = (v << 7) | (bytes[i] & 0x7f);
+    if (!(bytes[i] & 0x80)) { parts.push(v); v = 0; }
+  }
+  if (parts.length) {
+    const first = parts[0];
+    const a = first < 40 ? 0 : first < 80 ? 1 : 2;
+    parts[0] = a;
+    parts.splice(1, 0, first - a * 40);
+  }
+  return parts.join('.');
+}
+
+const OID_SHORT = {
+  '2.5.4.3': 'CN', '2.5.4.6': 'C', '2.5.4.7': 'L',
+  '2.5.4.8': 'ST', '2.5.4.10': 'O', '2.5.4.11': 'OU',
+  '2.5.4.5': 'serialNumber', '1.2.840.113549.1.9.1': 'emailAddress',
+};
+
+function parseNameAttrs(buf, tlv) {
+  const attrs = [];
+  let off = tlv.valueStart;
+  while (off < tlv.valueEnd) {
+    const rdn = readTLV(buf, off);      // SET OF AttributeTypeAndValue
+    let aoff = rdn.valueStart;
+    while (aoff < rdn.valueEnd) {
+      const atv = readTLV(buf, aoff);   // SEQUENCE { OID, value }
+      const oidTlv = readTLV(buf, atv.valueStart);
+      const valTlv = readTLV(buf, oidTlv.rawEnd);
+      attrs.push({
+        oid: decodeOid(buf, oidTlv),
+        value: decodeDerString(valTlv.tag, buf.subarray(valTlv.valueStart, valTlv.valueEnd)),
+      });
+      aoff = atv.rawEnd;
+    }
+    off = rdn.rawEnd;
+  }
+  return attrs;
+}
+
+function formatNameAttrs(attrs) {
+  // DER 中 RDNSequence 顺序：C, ST, O, CN（与 OpenSSL -issuer 输出一致），无需反转
+  return attrs
+    .map((a) => `${OID_SHORT[a.oid] || a.oid}=${a.value}`)
+    .join(', ');
+}
+
+function parseDerTime(tag, str) {
+  let yyyy, mm, dd, hh, mi, ss;
+  if (tag === 0x17) {          // UTCTime: YYMMDDHHMMSSZ
+    const yy = parseInt(str.slice(0, 2), 10);
+    yyyy = String(yy >= 50 ? 1900 + yy : 2000 + yy);
+    mm = str.slice(2, 4); dd = str.slice(4, 6);
+    hh = str.slice(6, 8); mi = str.slice(8, 10); ss = str.slice(10, 12);
+  } else if (tag === 0x18) {   // GeneralizedTime: YYYYMMDDHHMMSSZ
+    yyyy = str.slice(0, 4); mm = str.slice(4, 6); dd = str.slice(6, 8);
+    hh = str.slice(8, 10); mi = str.slice(10, 12); ss = str.slice(12, 14);
+  } else {
+    return str;
+  }
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} UTC`;
+}
+
+/**
+ * 从 PEM 证书中解析出 serial / issuer / subject / 有效期。
+ * 解析失败会抛异常（调用方负责 try/catch，用于 mock 占位证书场景）。
+ */
+function parseX509Pem(pem) {
+  const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+
+  const cert = readTLV(buf, 0);               // Certificate SEQUENCE
+  const tbs  = readTLV(buf, cert.valueStart); // TBSCertificate SEQUENCE
+
+  let off = tbs.valueStart;
+  if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd; // version [0] EXPLICIT
+
+  const serialTlv = readTLV(buf, off);
+  const serialBytes = buf.subarray(serialTlv.valueStart, serialTlv.valueEnd);
+  const serial = Array.from(serialBytes, (b) => b.toString(16).padStart(2, '0'))
+    .join(':').toUpperCase();
+  off = serialTlv.rawEnd;
+
+  off = readTLV(buf, off).rawEnd;             // signature AlgorithmIdentifier
+
+  const issuerTlv = readTLV(buf, off);
+  const issuerAttrs = parseNameAttrs(buf, issuerTlv);
+  off = issuerTlv.rawEnd;
+
+  const validityTlv = readTLV(buf, off);
+  const nbTlv = readTLV(buf, validityTlv.valueStart);
+  const naTlv = readTLV(buf, nbTlv.rawEnd);
+  const notBefore = parseDerTime(nbTlv.tag,
+    new TextDecoder().decode(buf.subarray(nbTlv.valueStart, nbTlv.valueEnd)));
+  const notAfter  = parseDerTime(naTlv.tag,
+    new TextDecoder().decode(buf.subarray(naTlv.valueStart, naTlv.valueEnd)));
+  off = validityTlv.rawEnd;
+
+  const subjectTlv = readTLV(buf, off);
+  const subjectAttrs = parseNameAttrs(buf, subjectTlv);
+
+  return {
+    serial,
+    issuer:  formatNameAttrs(issuerAttrs),
+    subject: formatNameAttrs(subjectAttrs),
+    notBefore,
+    notAfter,
+  };
+}
+
 function toUint8Array(x) {
   if (x instanceof Uint8Array) return x;
   if (x instanceof ArrayBuffer) return new Uint8Array(x);
@@ -812,6 +959,9 @@ const MOCK_CERT_PEM = [
 /**
  * 向 OTMC 总服务器请求签发 1 级 CA 证书。
  * 真实实现：POST CSR 到签发接口，服务端用 client-broker-inter 私钥签发后返回 PEM。
+ *
+ * 注意：服务端返回值可能只有 certificate（PEM），不含 serial / issuer 等元数据。
+ * 元数据统一由 onSign() 中的 parseX509Pem() 从 PEM 解析，不依赖这里返回的字段。
  */
 async function requestRemoteSignature(csrPem, type) {
   const payload = {
@@ -855,7 +1005,7 @@ async function requestRemoteSignature(csrPem, type) {
   }
 
   const data = await resp.json();
-  console.log('requestRemoteSignature:: data:=<',data,'>');
+  console.log('requestRemoteSignature:: data:=<', data, '>');
   const pem = data.certificate || data.certPem || data.crt;
   if (!pem) throw new Error('远端响应缺少 certificate 字段');
 
@@ -1149,16 +1299,33 @@ const app = createApp({
 
         fillFormFromAttrs(record.subjectAttrs);
 
+        // 若记录里只有 PEM、没有元数据（旧记录或远端签发场景），从 PEM 解析兜底
+        let certSerial = record.certSerial || '';
+        let certIssuer = record.certIssuer || '';
+        let certNotBefore = record.certNotBefore || '';
+        let certNotAfter = record.certNotAfter || '';
+        if (record.certPem) {
+          try {
+            const p = parseX509Pem(record.certPem);
+            certSerial = p.serial || certSerial;
+            certIssuer = p.issuer || certIssuer;
+            certNotBefore = p.notBefore || certNotBefore;
+            certNotAfter = p.notAfter || certNotAfter;
+          } catch (e) {
+            console.warn('解析已存证书 PEM 失败（可能为 mock 证书）', e);
+          }
+        }
+
         Object.assign(result, {
           csrPem,
           publicKeyPem: pemFromDer(toUint8Array(record.publicKeySpki), 'PUBLIC KEY'),
           subject: record.subject || '',
           createdAt: record.createdAt || '',
           certPem: record.certPem || '',
-          certSerial: record.certSerial || '',
-          certIssuer: record.certIssuer || '',
-          certNotBefore: record.certNotBefore || '',
-          certNotAfter: record.certNotAfter || '',
+          certSerial,
+          certIssuer,
+          certNotBefore,
+          certNotAfter,
           certIsMock: false,
         });
 
@@ -1276,7 +1443,10 @@ const app = createApp({
       await loadFromDb(false);
     }
 
-    /* ===== 签发证书 ===== */
+    /* ===== 签发证书 =====
+     * 两条路径（远端 / 本地）签完后统一从 PEM 解析出 serial / issuer / notBefore / notAfter，
+     * 再写回 IndexedDB 并赋值给 result，避免远端响应缺少元数据导致页面显示空白。
+     */
     async function onSign() {
       const t = currentType.value;
 
@@ -1292,22 +1462,6 @@ const app = createApp({
         if (t.remote) {
           /* --- 1 级 CA：由 OTMC 总服务器签发 --- */
           cert = await requestRemoteSignature(result.csrPem, t);
-
-          // 若本机已有该类型的密钥记录，把证书一并写回
-          try {
-            const selfRec = await dbGet(t.recordKey);
-            if (selfRec) {
-              selfRec.certPem = cert.pem;
-              selfRec.certSerial = cert.serial;
-              selfRec.certIssuer = cert.issuer;
-              selfRec.certNotBefore = cert.notBefore;
-              selfRec.certNotAfter = cert.notAfter;
-              selfRec.certIssuedAt = new Date().toISOString();
-              await dbPut(t.recordKey, selfRec);
-            }
-          } catch (e) {
-            console.warn('写回证书失败（不影响本次签发结果）', e);
-          }
         } else {
           /* --- 2 级 CA / 叶子证书：用本机上级 CA 私钥本地签发 --- */
           const selfRec = await dbGet(t.recordKey);
@@ -1335,23 +1489,42 @@ const app = createApp({
 
           cert.issuer = parentRec.subject ||
             parentRec.subjectAttrs.filter((a) => a.value).map((a) => `/${a.key}=${a.value}`).join('');
+        }
 
-          // 把证书写回自身记录
-          selfRec.certPem = cert.pem;
-          selfRec.certSerial = cert.serial;
-          selfRec.certIssuer = cert.issuer;
-          selfRec.certNotBefore = cert.notBefore;
-          selfRec.certNotAfter = cert.notAfter;
-          selfRec.certIssuedAt = new Date().toISOString();
-          await dbPut(t.recordKey, selfRec);
+        // 统一从 PEM 解析元数据（远端响应可能只有 certificate 字段）
+        let parsed = {};
+        try {
+          parsed = parseX509Pem(cert.pem);
+        } catch (e) {
+          console.warn('解析签发证书 PEM 失败（可能为 mock 证书）', e);
+        }
+        const finalSerial    = parsed.serial    || cert.serial    || '';
+        const finalIssuer    = parsed.issuer    || cert.issuer    || '';
+        const finalNotBefore = parsed.notBefore || cert.notBefore || '';
+        const finalNotAfter  = parsed.notAfter  || cert.notAfter  || '';
+
+        // 写回 IndexedDB（两条路径统一处理）
+        try {
+          const selfRec = await dbGet(t.recordKey);
+          if (selfRec) {
+            selfRec.certPem = cert.pem;
+            selfRec.certSerial = finalSerial;
+            selfRec.certIssuer = finalIssuer;
+            selfRec.certNotBefore = finalNotBefore;
+            selfRec.certNotAfter = finalNotAfter;
+            selfRec.certIssuedAt = new Date().toISOString();
+            await dbPut(t.recordKey, selfRec);
+          }
+        } catch (e) {
+          console.warn('写回证书失败（不影响本次签发结果）', e);
         }
 
         Object.assign(result, {
           certPem: cert.pem,
-          certSerial: cert.serial || '',
-          certIssuer: cert.issuer || '',
-          certNotBefore: cert.notBefore || '',
-          certNotAfter: cert.notAfter || '',
+          certSerial: finalSerial,
+          certIssuer: finalIssuer,
+          certNotBefore: finalNotBefore,
+          certNotAfter: finalNotAfter,
           certIsMock: !!cert.isMock,
         });
 
