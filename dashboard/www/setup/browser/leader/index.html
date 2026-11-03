@@ -349,6 +349,104 @@
             </a-typography-paragraph>
           </a-card>
 
+          <!-- ★ 新增：为其他设备的叶子证书 CSR 签发（仅 Space 2nd-Level CA 页签） -->
+          <a-card
+            v-if="currentTypeKey === 'space-inter'"
+            class="section"
+            title="为其他设备的叶子证书 CSR 签发（用本机 Space 2nd-Level CA）"
+          >
+            <a-alert
+              v-if="!hasStored"
+              type="warning"
+              show-icon
+              style="margin-bottom: 12px"
+              message="本机尚未保存 Space 2nd-Level CA 私钥，请先在上方「生成密钥对与 CSR」后再来签发。"
+            ></a-alert>
+
+            <a-form layout="vertical">
+              <a-form-item label="其他设备的叶子证书 CSR（PKCS#10 PEM）">
+                <a-textarea
+                  v-model:value="extCsrPem"
+                  :rows="7"
+                  class="pem-text"
+                  placeholder="-----BEGIN CERTIFICATE REQUEST-----&#10;...&#10;-----END CERTIFICATE REQUEST-----"
+                />
+              </a-form-item>
+            </a-form>
+
+            <a-space wrap style="margin-bottom: 12px">
+              <a-button :disabled="!extCsrPem.trim()" @click="onParseExtCsr(false)">
+                解析并验证 CSR
+              </a-button>
+              <a-button
+                type="primary"
+                :loading="extSigning"
+                :disabled="!extCsrInfo || !cryptoOk || !indexedDbOk || !hasStored"
+                @click="onSignExtCsr"
+              >
+                用本机 2 级 CA 签发该 CSR
+              </a-button>
+              <a-button :disabled="!extCsrPem && !extCertPem" @click="onClearExt">
+                清空
+              </a-button>
+            </a-space>
+
+            <a-alert
+              v-if="extCsrError"
+              type="error"
+              show-icon
+              :message="extCsrError"
+              style="margin-bottom: 12px"
+            ></a-alert>
+
+            <a-descriptions v-if="extCsrInfo" :column="1" size="small" bordered style="margin-bottom: 12px">
+              <a-descriptions-item label="Subject">
+                <span class="mono">{{ extCsrInfo.subjectString || '(空)' }}</span>
+              </a-descriptions-item>
+              <a-descriptions-item label="公钥算法">
+                <span class="mono">{{ extCsrInfo.keyAlgLabel }}</span>
+              </a-descriptions-item>
+              <a-descriptions-item label="CSR 自签名校验">
+                <a-tag v-if="extCsrVerify === 'ok'" color="green">验证通过</a-tag>
+                <a-tag v-else-if="extCsrVerify === 'fail'" color="red">验证失败（CSR 可能被篡改）</a-tag>
+                <a-tag v-else-if="extCsrVerify === 'unsupported'" color="orange">算法不支持，未验证</a-tag>
+                <a-tag v-else>未验证</a-tag>
+              </a-descriptions-item>
+              <a-descriptions-item label="将签发的扩展">
+                <span class="mono">
+                  basicConstraints=critical,CA:FALSE；keyUsage=critical,digitalSignature；extendedKeyUsage=clientAuth
+                </span>
+              </a-descriptions-item>
+            </a-descriptions>
+
+            <div class="pem-block" v-if="extCertPem">
+              <div class="pem-head">
+                <span>
+                  <a-typography-text strong>已签发证书 (X.509 v3 · End-Entity)</a-typography-text>
+                  <a-tag color="purple" style="margin-left: 8px">{{ extCertFileName }}</a-tag>
+                </span>
+                <a-space>
+                  <a-button size="small" @click="copyText(extCertPem)">复制</a-button>
+                  <a-button size="small" @click="downloadFile(extCertFileName, extCertPem)">下载</a-button>
+                </a-space>
+              </div>
+
+              <a-descriptions :column="1" size="small" bordered style="margin-bottom: 8px">
+                <a-descriptions-item label="Serial">
+                  <span class="mono">{{ extCertMeta.serial || '-' }}</span>
+                </a-descriptions-item>
+                <a-descriptions-item label="Issuer">
+                  <span class="mono">{{ extCertMeta.issuer || '-' }}</span>
+                </a-descriptions-item>
+                <a-descriptions-item label="有效期">
+                  <span class="mono">{{ extCertMeta.notBefore || '-' }} → {{ extCertMeta.notAfter || '-' }}</span>
+                </a-descriptions-item>
+              </a-descriptions>
+
+              <a-textarea :rows="8" :value="extCertPem" readonly class="pem-text" />
+            </div>
+          </a-card>
+
           <!-- ③ 结果 -->
           <a-card v-if="hasResult" class="section" title="③ 结果">
             <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
@@ -539,7 +637,7 @@
 
 <!-- 4. 业务脚本 -->
 <script>
-const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
+const { createApp, reactive, ref, computed, watch, onMounted, onBeforeUnmount } = Vue;
 
 // antdv-next 可能不暴露 message，做防御性降级
 const message = (antd && antd.message) || {
@@ -846,9 +944,13 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
 /* ---------------------------------------------------------------------------
  * 本地 X.509 v3 证书签发
  * 使用上级 CA 的不可导出私钥（CryptoKey）在浏览器内对 TBSCertificate 签名。
+ *
+ * subjectDer 参数：可选。传入外部 CSR 的 Subject DER 时直接复用，
+ * 可原样保留任意 Subject 属性及其原始编码（如 emailAddress 的 IA5String）。
  * ------------------------------------------------------------------------- */
 async function issueCertificate({
   subjectAttrs,
+  subjectDer: subjectDerOverride,
   subjectSpki,
   issuerAttrs,
   issuerSpki,
@@ -856,7 +958,9 @@ async function issueCertificate({
   isCa,
   pathLen,
 }) {
-  const subjectDer = nameFromAttrs(subjectAttrs);
+  const subjectDer = subjectDerOverride
+    ? toUint8Array(subjectDerOverride)
+    : nameFromAttrs(subjectAttrs);
   const issuerDer = nameFromAttrs(issuerAttrs);
   const spkiDer = toUint8Array(subjectSpki);
 
@@ -941,6 +1045,215 @@ async function issueCertificate({
     notBefore: fmtUTC(notBefore),
     notAfter: fmtUTC(notAfter),
   };
+}
+
+/* ===========================================================================
+ * 外部 CSR（PKCS#10）解析与验签
+ * 用于「为其他设备的叶子证书 CSR 签发」：解析出 Subject DER 与公钥 SPKI，
+ * 再用本机 Space 2nd-Level CA 私钥签发出 End-Entity 证书。
+ * ========================================================================= */
+
+const OID_EC_PUBLIC_KEY  = '1.2.840.10045.2.1';
+const OID_RSA_PUBLIC_KEY = '1.2.840.113549.1.1.1';
+const OID_ED25519        = '1.3.101.112';
+
+const CURVE_OID_TO_NAME = {
+  '1.2.840.10045.3.1.7': 'P-256',
+  '1.3.132.0.34': 'P-384',
+  '1.3.132.0.35': 'P-521',
+};
+const CURVE_HALF_LEN = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+
+const ECDSA_SIG_OID_TO_HASH = {
+  '1.2.840.10045.4.3.2': 'SHA-256',
+  '1.2.840.10045.4.3.3': 'SHA-384',
+  '1.2.840.10045.4.3.4': 'SHA-512',
+};
+const RSA_SIG_OID_TO_HASH = {
+  '1.2.840.113549.1.1.11': 'SHA-256',
+  '1.2.840.113549.1.1.12': 'SHA-384',
+  '1.2.840.113549.1.1.13': 'SHA-512',
+};
+
+/** PEM → DER 字节 */
+function pemToDerBytes(pem) {
+  const b64 = String(pem)
+    .replace(/-----BEGIN [^-]+-----/g, '')
+    .replace(/-----END [^-]+-----/g, '')
+    .replace(/\s+/g, '');
+  if (!b64) throw new Error('PEM 内容为空');
+  let bin;
+  try {
+    bin = atob(b64);
+  } catch (e) {
+    throw new Error('PEM Base64 解码失败');
+  }
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** 读取 SubjectPublicKeyInfo 的 AlgorithmIdentifier */
+function parseSpkiAlgorithm(spkiDer) {
+  const buf = toUint8Array(spkiDer);
+  const top = readTLV(buf, 0);
+  if (top.tag !== 0x30) throw new Error('SPKI 结构异常：缺少外层 SEQUENCE');
+  const alg = readTLV(buf, top.valueStart);
+  if (alg.tag !== 0x30) throw new Error('SPKI 结构异常：缺少 AlgorithmIdentifier');
+  const oidTlv = readTLV(buf, alg.valueStart);
+  if (oidTlv.tag !== 0x06) throw new Error('SPKI 结构异常：缺少算法 OID');
+
+  let paramsOid = null;
+  if (oidTlv.rawEnd < alg.valueEnd) {
+    const p = readTLV(buf, oidTlv.rawEnd);
+    if (p.tag === 0x06) paramsOid = decodeOid(buf, p);
+  }
+  return { oid: decodeOid(buf, oidTlv), paramsOid };
+}
+
+/** 生成人类可读的公钥算法描述 */
+function describePublicKey(spkiDer) {
+  try {
+    const alg = parseSpkiAlgorithm(spkiDer);
+    if (alg.oid === OID_EC_PUBLIC_KEY) {
+      const curve = CURVE_OID_TO_NAME[alg.paramsOid] || alg.paramsOid || '未知曲线';
+      return 'ECDSA / ' + curve;
+    }
+    if (alg.oid === OID_RSA_PUBLIC_KEY) return 'RSA';
+    if (alg.oid === OID_ED25519) return 'Ed25519';
+    return 'OID ' + alg.oid;
+  } catch (e) {
+    return '未知';
+  }
+}
+
+/**
+ * 解析 PKCS#10 CSR（PEM）：
+ *   CertificationRequest ::= SEQUENCE {
+ *     certificationRequestInfo CertificationRequestInfo,
+ *     signatureAlgorithm        AlgorithmIdentifier,
+ *     signature                 BIT STRING }
+ *   CertificationRequestInfo ::= SEQUENCE {
+ *     version INTEGER, subject Name, subjectPKInfo SPKI,
+ *     attributes [0] IMPLICIT ... }
+ */
+function parseCsrPem(pem) {
+  const buf = pemToDerBytes(pem);
+  if (buf.length < 16) throw new Error('数据过短，不是有效的 CSR');
+
+  const top = readTLV(buf, 0);
+  if (top.tag !== 0x30) throw new Error('不是合法的 PKCS#10 结构（缺少外层 SEQUENCE）');
+
+  const cri = readTLV(buf, top.valueStart);
+  if (cri.tag !== 0x30) throw new Error('CSR 结构异常：缺少 CertificationRequestInfo');
+
+  let off = cri.valueStart;
+
+  const versionTlv = readTLV(buf, off);
+  if (versionTlv.tag !== 0x02) throw new Error('CSR 结构异常：版本字段不是 INTEGER');
+  off = versionTlv.rawEnd;
+
+  const subjectTlv = readTLV(buf, off);
+  if (subjectTlv.tag !== 0x30) throw new Error('CSR 结构异常：Subject 字段不是 SEQUENCE');
+  off = subjectTlv.rawEnd;
+
+  const spkiTlv = readTLV(buf, off);
+  if (spkiTlv.tag !== 0x30) throw new Error('CSR 结构异常：公钥字段不是 SEQUENCE');
+
+  const sigAlgTlv = readTLV(buf, cri.rawEnd);
+  if (sigAlgTlv.tag !== 0x30) throw new Error('CSR 结构异常：缺少签名算法');
+
+  const sigAlgOidTlv = readTLV(buf, sigAlgTlv.valueStart);
+  if (sigAlgOidTlv.tag !== 0x06) throw new Error('CSR 结构异常：缺少签名算法 OID');
+
+  const sigBitsTlv = readTLV(buf, sigAlgTlv.rawEnd);
+  if (sigBitsTlv.tag !== 0x03) throw new Error('CSR 结构异常：缺少签名 BIT STRING');
+  if (sigBitsTlv.valueEnd - sigBitsTlv.valueStart < 2) throw new Error('CSR 签名为空');
+
+  const subjectAttrs = parseNameAttrs(buf, subjectTlv);
+  const subjectString = formatNameAttrs(subjectAttrs);
+  const cnAttr = subjectAttrs.find((a) => a.oid === '2.5.4.3');
+  const spkiDer = buf.slice(spkiTlv.rawStart, spkiTlv.rawEnd);
+
+  return {
+    subjectAttrs,
+    subjectString,
+    cn: cnAttr ? cnAttr.value : '',
+    subjectDer: buf.slice(subjectTlv.rawStart, subjectTlv.rawEnd),
+    spkiDer,
+    criDer: buf.slice(cri.rawStart, cri.rawEnd),
+    sigAlgOid: decodeOid(buf, sigAlgOidTlv),
+    signature: buf.slice(sigBitsTlv.valueStart + 1, sigBitsTlv.valueEnd),
+    keyAlgLabel: describePublicKey(spkiDer),
+  };
+}
+
+/** 去掉前导 0 并左填充到固定长度（DER INTEGER → 定长大端） */
+function intToFixedBytes(bytes, len) {
+  let i = 0;
+  while (i < bytes.length - 1 && bytes[i] === 0) i++;
+  const v = bytes.subarray(i);
+  if (v.length > len) throw new Error('签名整数超出曲线长度');
+  const out = new Uint8Array(len);
+  out.set(v, len - v.length);
+  return out;
+}
+
+/** ECDSA DER 签名（SEQUENCE{r,s}）→ WebCrypto 需要的 r||s */
+function ecdsaDerToRaw(der, halfLen) {
+  const buf = toUint8Array(der);
+  const seq = readTLV(buf, 0);
+  if (seq.tag !== 0x30) throw new Error('ECDSA 签名不是 SEQUENCE');
+  const rTlv = readTLV(buf, seq.valueStart);
+  if (rTlv.tag !== 0x02) throw new Error('ECDSA 签名 r 不是 INTEGER');
+  const sTlv = readTLV(buf, rTlv.rawEnd);
+  if (sTlv.tag !== 0x02) throw new Error('ECDSA 签名 s 不是 INTEGER');
+
+  const out = new Uint8Array(halfLen * 2);
+  out.set(intToFixedBytes(buf.subarray(rTlv.valueStart, rTlv.valueEnd), halfLen), 0);
+  out.set(intToFixedBytes(buf.subarray(sTlv.valueStart, sTlv.valueEnd), halfLen), halfLen);
+  return out;
+}
+
+/**
+ * 校验 CSR 的自签名。返回 true/false；
+ * 遇到不支持的算法时抛异常（调用方按「不支持验证」处理）。
+ */
+async function verifyCsrSignature(info) {
+  const alg = parseSpkiAlgorithm(info.spkiDer);
+  const subtle = crypto.subtle;
+
+  if (alg.oid === OID_EC_PUBLIC_KEY) {
+    const curve = CURVE_OID_TO_NAME[alg.paramsOid];
+    const hash = ECDSA_SIG_OID_TO_HASH[info.sigAlgOid];
+    if (!curve) throw new Error('不支持的 EC 曲线 OID：' + alg.paramsOid);
+    if (!hash) throw new Error('不支持的 ECDSA 签名算法 OID：' + info.sigAlgOid);
+
+    const key = await subtle.importKey(
+      'spki', toUint8Array(info.spkiDer),
+      { name: 'ECDSA', namedCurve: curve }, false, ['verify']
+    );
+    const raw = ecdsaDerToRaw(info.signature, CURVE_HALF_LEN[curve]);
+    return await subtle.verify(
+      { name: 'ECDSA', hash }, key, raw, toUint8Array(info.criDer)
+    );
+  }
+
+  if (alg.oid === OID_RSA_PUBLIC_KEY) {
+    const hash = RSA_SIG_OID_TO_HASH[info.sigAlgOid];
+    if (!hash) throw new Error('不支持的 RSA 签名算法 OID：' + info.sigAlgOid);
+
+    const key = await subtle.importKey(
+      'spki', toUint8Array(info.spkiDer),
+      { name: 'RSASSA-PKCS1-v1_5', hash }, false, ['verify']
+    );
+    return await subtle.verify(
+      'RSASSA-PKCS1-v1_5', key,
+      toUint8Array(info.signature), toUint8Array(info.criDer)
+    );
+  }
+
+  throw new Error('暂不支持校验该公钥算法：' + alg.oid);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1314,6 +1627,138 @@ const app = createApp({
     const dbError = ref('');
 
     const hasResult = computed(() => !!(result.csrPem || result.publicKeyPem));
+
+    /* ===== 其他设备叶子 CSR 签发（仅 Space 2nd-Level CA 页签使用） ===== */
+    const extCsrPem = ref('');
+    const extCsrInfo = ref(null);
+    const extCsrError = ref('');
+    const extCsrVerify = ref('');      // '' | 'ok' | 'fail' | 'unsupported'
+    const extSigning = ref(false);
+    const extCertPem = ref('');
+    const extCertMeta = reactive({ serial: '', issuer: '', notBefore: '', notAfter: '' });
+    let extParseTimer = null;
+
+    const extCertFileName = computed(() => {
+      const base = (extCsrInfo.value && extCsrInfo.value.cn) || 'client-space-leaf-ext';
+      return String(base).replace(/[^\w.-]+/g, '_') + '.crt';
+    });
+
+    function resetExtResult() {
+      extCertPem.value = '';
+      Object.assign(extCertMeta, { serial: '', issuer: '', notBefore: '', notAfter: '' });
+    }
+
+    /** 输入框变化：清空旧结果并防抖自动解析 */
+    watch(extCsrPem, () => {
+      extCsrInfo.value = null;
+      extCsrError.value = '';
+      extCsrVerify.value = '';
+      resetExtResult();
+
+      if (extParseTimer) { clearTimeout(extParseTimer); extParseTimer = null; }
+      const text = (extCsrPem.value || '').trim();
+      if (!text) return;
+
+      extParseTimer = setTimeout(() => {
+        extParseTimer = null;
+        onParseExtCsr(true);
+      }, 500);
+    });
+
+    async function onParseExtCsr(silent) {
+      extCsrInfo.value = null;
+      extCsrError.value = '';
+      extCsrVerify.value = '';
+
+      const text = (extCsrPem.value || '').trim();
+      if (!text) {
+        if (!silent) message.warning('请先粘贴其他设备的叶子证书 CSR');
+        return;
+      }
+
+      let info;
+      try {
+        info = parseCsrPem(text);
+      } catch (e) {
+        extCsrError.value = 'CSR 解析失败：' + (e && e.message ? e.message : e);
+        if (!silent) message.error(extCsrError.value);
+        return;
+      }
+
+      extCsrInfo.value = info;
+
+      try {
+        const ok = await verifyCsrSignature(info);
+        extCsrVerify.value = ok ? 'ok' : 'fail';
+        if (!ok && !silent) {
+          message.warning('CSR 自签名验证未通过，请确认 CSR 是否被修改');
+        }
+      } catch (e) {
+        extCsrVerify.value = 'unsupported';
+        console.warn('CSR 签名验证跳过：', e);
+      }
+
+      if (!silent) {
+        message.success('CSR 解析成功：' + (info.subjectString || '(空 Subject)'));
+      }
+    }
+
+    async function onSignExtCsr() {
+      const info = extCsrInfo.value;
+      if (!info) { message.warning('请先粘贴并解析其他设备的 CSR'); return; }
+      if (!cryptoOk.value) { message.error('当前环境不支持 Web Crypto API'); return; }
+
+      extSigning.value = true;
+      try {
+        // 用本机 Space 2nd-Level CA（recordKey: client-space-inter）私钥签发
+        const caRecKey = 'client-space-inter';
+        const caRec = await dbGet(caRecKey);
+        if (!caRec || !caRec.privateKey) {
+          throw new Error('本机没有找到 Space 2nd-Level CA 私钥，请先在该页签生成密钥对与 CSR');
+        }
+
+        const cert = await issueCertificate({
+          subjectDer: info.subjectDer,              // 复用外部 CSR 的 Subject DER
+          subjectSpki: info.spkiDer,                // 复用外部 CSR 的公钥 SPKI
+          issuerAttrs: caRec.subjectAttrs,
+          issuerSpki: toUint8Array(caRec.publicKeySpki),
+          issuerPrivateKey: caRec.privateKey,
+          isCa: false,
+          pathLen: null,
+        });
+
+        let parsed = {};
+        try {
+          parsed = parseX509Pem(cert.pem);
+        } catch (e) {
+          console.warn('解析签发证书 PEM 失败', e);
+        }
+
+        extCertPem.value = cert.pem;
+        Object.assign(extCertMeta, {
+          serial: parsed.serial || cert.serial || '',
+          issuer: parsed.issuer || caRec.subject || '',
+          notBefore: parsed.notBefore || cert.notBefore || '',
+          notAfter: parsed.notAfter || cert.notAfter || '',
+        });
+
+        message.success('已用本机 Space 2nd-Level CA 为该 CSR 签发叶子证书');
+      } catch (e) {
+        console.error(e);
+        message.error('签发失败：' + (e && e.message ? e.message : e));
+      } finally {
+        extSigning.value = false;
+      }
+    }
+
+    function onClearExt() {
+      extCsrPem.value = '';
+      extCsrInfo.value = null;
+      extCsrError.value = '';
+      extCsrVerify.value = '';
+      resetExtResult();
+      if (extParseTimer) { clearTimeout(extParseTimer); extParseTimer = null; }
+    }
 
     const subjectString = computed(() =>
       subjectFields
@@ -1704,6 +2149,9 @@ const app = createApp({
       typeOptions, currentTypeKey, currentType, signCommand, signButtonLabel,
       dbName: DB_NAME,
       onTypeChange, onGenerate, onLoad, onSign, onClear,
+      // 其他设备叶子 CSR 签发
+      extCsrPem, extCsrInfo, extCsrError, extCsrVerify, extSigning, extCertPem,
+      extCertMeta, extCertFileName, onParseExtCsr, onSignExtCsr, onClearExt,
       copyText, downloadFile,
     };
   },
