@@ -422,28 +422,60 @@
             <div class="pem-block" v-if="extCertPem">
               <div class="pem-head">
                 <span>
-                  <a-typography-text strong>已签发证书 (X.509 v3 · End-Entity)</a-typography-text>
-                  <a-tag color="purple" style="margin-left: 8px">{{ extCertFileName }}</a-tag>
+                  <a-typography-text strong>已签发证书链（叶子 + 2 级 CA + 1 级 CA）</a-typography-text>
+                  <a-tag color="purple" style="margin-left: 8px">{{ extChainFileName }}</a-tag>
                 </span>
                 <a-space>
-                  <a-button size="small" @click="copyText(extCertPem)">复制</a-button>
-                  <a-button size="small" @click="downloadFile(extCertFileName, extCertPem)">下载</a-button>
+                  <a-button size="small" @click="copyText(extCertChainPem || extCertPem)">复制证书链</a-button>
+                  <a-button size="small" @click="downloadFile(extChainFileName, extCertChainPem || extCertPem)">下载证书链</a-button>
                 </a-space>
               </div>
 
+              <a-alert
+                v-if="extChainWarnings.length"
+                type="warning"
+                show-icon
+                style="margin-bottom: 8px"
+              >
+                <template #message>
+                  <div>证书链不完整：</div>
+                  <div v-for="(w, i) in extChainWarnings" :key="i">· {{ w }}</div>
+                </template>
+              </a-alert>
+              <a-alert
+                v-else-if="extCertChainPem"
+                type="success"
+                show-icon
+                style="margin-bottom: 8px"
+                message="证书链完整：叶子证书 → Space 2nd-Level CA → Space 1st-Level CA"
+              ></a-alert>
+
               <a-descriptions :column="1" size="small" bordered style="margin-bottom: 8px">
-                <a-descriptions-item label="Serial">
+                <a-descriptions-item label="叶子证书 Serial">
                   <span class="mono">{{ extCertMeta.serial || '-' }}</span>
                 </a-descriptions-item>
-                <a-descriptions-item label="Issuer">
+                <a-descriptions-item label="叶子证书 Issuer">
                   <span class="mono">{{ extCertMeta.issuer || '-' }}</span>
                 </a-descriptions-item>
-                <a-descriptions-item label="有效期">
+                <a-descriptions-item label="叶子证书有效期">
                   <span class="mono">{{ extCertMeta.notBefore || '-' }} → {{ extCertMeta.notAfter || '-' }}</span>
+                </a-descriptions-item>
+                <a-descriptions-item label="链结构">
+                  <span class="mono">
+                    叶子证书
+                    <template v-if="extChainIncludes.inter"> → Space 2nd-Level CA</template>
+                    <template v-if="extChainIncludes.top"> → Space 1st-Level CA</template>
+                  </span>
                 </a-descriptions-item>
               </a-descriptions>
 
-              <a-textarea :rows="8" :value="extCertPem" readonly class="pem-text" />
+              <a-textarea :rows="18" :value="extCertChainPem || extCertPem" readonly class="pem-text" />
+
+              <a-divider style="margin: 12px 0 8px">单独操作叶子证书</a-divider>
+              <a-space wrap>
+                <a-button size="small" @click="copyText(extCertPem)">复制叶子证书</a-button>
+                <a-button size="small" @click="downloadFile(extCertFileName, extCertPem)">下载叶子证书</a-button>
+              </a-space>
             </div>
           </a-card>
 
@@ -1635,6 +1667,9 @@ const app = createApp({
     const extCsrVerify = ref('');      // '' | 'ok' | 'fail' | 'unsupported'
     const extSigning = ref(false);
     const extCertPem = ref('');
+    const extCertChainPem = ref('');
+    const extChainWarnings = ref([]);
+    const extChainIncludes = reactive({ inter: false, top: false });
     const extCertMeta = reactive({ serial: '', issuer: '', notBefore: '', notAfter: '' });
     let extParseTimer = null;
 
@@ -1643,8 +1678,17 @@ const app = createApp({
       return String(base).replace(/[^\w.-]+/g, '_') + '.crt';
     });
 
+    const extChainFileName = computed(() => {
+      const base = (extCsrInfo.value && extCsrInfo.value.cn) || 'client-space-leaf-ext';
+      return String(base).replace(/[^\w.-]+/g, '_') + '-chain.pem';
+    });
+
     function resetExtResult() {
       extCertPem.value = '';
+      extCertChainPem.value = '';
+      extChainWarnings.value = [];
+      extChainIncludes.inter = false;
+      extChainIncludes.top = false;
       Object.assign(extCertMeta, { serial: '', issuer: '', notBefore: '', notAfter: '' });
     }
 
@@ -1742,7 +1786,48 @@ const app = createApp({
           notAfter: parsed.notAfter || cert.notAfter || '',
         });
 
-        message.success('已用本机 Space 2nd-Level CA 为该 CSR 签发叶子证书');
+        // ===== 组装完整证书链：叶子 → 2 级 CA → 1 级 CA =====
+        const chainParts = [cert.pem];
+        const warnings = [];
+        let hasInter = false;
+        let hasTop = false;
+
+        try {
+          const interRec = await dbGet('client-space-inter');
+          if (interRec && interRec.certPem) {
+            chainParts.push(interRec.certPem);
+            hasInter = true;
+          } else {
+            warnings.push('缺少 Space 2nd-Level CA 的已签发证书。请先切到「空间2级证书Space 2nd-Level CA」页签，用本机 1 级密钥完成签发。');
+          }
+        } catch (e) {
+          console.warn('读取 2 级 CA 证书失败', e);
+          warnings.push('读取 Space 2nd-Level CA 证书失败：' + (e && e.message ? e.message : e));
+        }
+
+        try {
+          const topRec = await dbGet('client-space-top');
+          if (topRec && topRec.certPem) {
+            chainParts.push(topRec.certPem);
+            hasTop = true;
+          } else {
+            warnings.push('缺少 Space 1st-Level CA 的已签发证书。请先切到「空间1级证书Space 1st-Level CA」页签，向 OTMC 总服务器获取签发证书。');
+          }
+        } catch (e) {
+          console.warn('读取 1 级 CA 证书失败', e);
+          warnings.push('读取 Space 1st-Level CA 证书失败：' + (e && e.message ? e.message : e));
+        }
+
+        extCertChainPem.value = chainParts.join('\n');
+        extChainWarnings.value = warnings;
+        extChainIncludes.inter = hasInter;
+        extChainIncludes.top = hasTop;
+
+        if (warnings.length === 0) {
+          message.success('已用本机 Space 2nd-Level CA 为该 CSR 签发叶子证书，并组装完整证书链（叶子 → 2 级 CA → 1 级 CA）');
+        } else {
+          message.warning(`叶子证书已签发，但证书链不完整（缺少 ${warnings.length} 张上级证书）`);
+        }
       } catch (e) {
         console.error(e);
         message.error('签发失败：' + (e && e.message ? e.message : e));
@@ -2149,9 +2234,11 @@ const app = createApp({
       typeOptions, currentTypeKey, currentType, signCommand, signButtonLabel,
       dbName: DB_NAME,
       onTypeChange, onGenerate, onLoad, onSign, onClear,
-      // 其他设备叶子 CSR 签发
-      extCsrPem, extCsrInfo, extCsrError, extCsrVerify, extSigning, extCertPem,
-      extCertMeta, extCertFileName, onParseExtCsr, onSignExtCsr, onClearExt,
+      // 其他设备叶子 CSR 签发（含完整证书链）
+      extCsrPem, extCsrInfo, extCsrError, extCsrVerify, extSigning,
+      extCertPem, extCertChainPem, extChainWarnings, extChainIncludes,
+      extCertMeta, extCertFileName, extChainFileName,
+      onParseExtCsr, onSignExtCsr, onClearExt,
       copyText, downloadFile,
     };
   },
