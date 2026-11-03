@@ -1,27 +1,45 @@
 # AGENTS.md
 
-OTMC MQTT broker deployment: several independently started services plus a Vue dashboard. The root `docker-compose.yml` is the authoritative runtime; `README.md` describes a planned Envoy/QUIC + C++26 design that is **not** what compose starts.
+OTMC MQTT broker deployment: several independently started services plus a separate dashboard stack. Root `docker-compose.yml` is what actually runs; root `README.md` describes a planned Envoy/QUIC + C++26 design that compose does **not** start. Trust compose files and `run.x.bash` helpers over README prose.
 
 ## Active data path
 
-Client mTLS `:8883` -> `HAProxy_Gate` -> `Nginx_Inner` TLS `:18883` -> `Nodejs_Broker` on UDS `/var/run/otmc/mqtt.sock` (host `/dev/shm/otmc/mqtt.sock`). All core compose services use `network_mode: host`, so these are literal host ports, not published container ports.
+Client mTLS `:8883` -> `HAProxy_Gate` -> `Nginx_Inner` TLS `:18883` -> `Nodejs_Broker` on UDS `/var/run/otmc/mqtt.sock` (host `/dev/shm/otmc/mqtt.sock`). Core compose services use `network_mode: host`, so these are literal host ports, not published container ports.
 
 - `Nodejs_Broker/` is the real MQTT 5 server. It uses `mqtt-packet` directly, not a broker library: `client_session.mjs` handles CONNECT/AUTH/PUBLISH/SUBSCRIBE/PINGREQ/DISCONNECT. No retained messages, persistence, wills, or offline sessions; forwarded publishes go out at QoS 0.
-- `HAProxy_Gate/` terminates client certificates; `lua/mqtt_route.lua` picks the `mqtt_backend_<nodeId>` with the smallest XOR distance between the last presented cert's public-key hash (leaf first, then chain order) and the backend ID.
-- `HAProxy_Gate/dynamic-backend/` reads broker endpoints from Valkey and writes `HAProxy_Gate/backends/mqtt_backend_<nodeId>.cfg`, then reloads HAProxy.
-- `dashboard/` is a separate compose stack. `SpaceService/` is an OpenSSL signing API on `/var/run/otmc/space.api.sock`; `WebPageService/` is the Vue/Vite UI. Its nginx serves `dashboard/www` on `:10443` and proxies `/api/v1/space` to `space.api.sock`. This stack uses `/dev/shm/otmc-dashboard`, not the broker's `/dev/shm/otmc`.
-- `CXX_Broker/` and `ProxyWSS/` are prototypes, not in any compose file. `ProxyWSS/index.mjs` uses CommonJS `require` in `.mjs` and has no manifest — do not wire it in without fixing it.
+- Auth is MQTT 5 enhanced auth, not just TLS: CONNECT -> AUTH `0x18` with method `certchain` -> client returns its certificate chain plus signatures over `{challenge, timeStamp}`. `test/client_mtls/index.js` is the reference client.
+- `HAProxy_Gate/` terminates client certificates; `lua/mqtt_route.lua` picks the `mqtt_backend_<nodeId>` with the smallest XOR distance between the last cert in the presented chain (leaf first, then chain order, so the root-most cert sent) and the backend ID.
+- `Nodejs_Broker/redis_config.mjs` derives `nodeId` from SHA-256 of the SPKI of `internal_cert/internal-server.crt`, Base58-encoded. That same ID is the HAProxy backend suffix and the DHT key.
+- `Nodejs_Broker/config.mjs` advertises `config.mqtt` (`host`/`port`) into Valkey; `HAProxy_Gate/dynamic-backend/` reads `otmc:broker:store:endpoints` plus `otmc:broker:store:endpoint:<nodeId>` (pub/sub `otmc:broker:endpoint:update`), writes `HAProxy_Gate/backends/mqtt_backend_<nodeId>.cfg`, then reloads HAProxy.
+- `dashboard/` is a separate compose stack. `SpaceService/` is an OpenSSL signing API on `/var/run/otmc/space.api.sock` (host `/dev/shm/otmc-dashboard`, not the broker's `/dev/shm/otmc`); `WebPageService/` is a Vue/Vite app. Its nginx serves `dashboard/www` on `:10443` and proxies `/api/v1/space/*` to `space.api.sock`.
+- `CXX_Broker/` and `ProxyWSS/` are prototypes, not in any compose file. `ProxyWSS/index.mjs` uses CommonJS `require` in `.mjs` and has no manifest; do not wire it in without fixing it.
 
 ## Commands
 
-From the repo root, start the core services explicitly to skip the stale root `valkey` service:
+There is no lint, typecheck, CI, or automated test suite. Every `npm test` script deliberately exits 1; do not treat that as a broken suite. Each service is its own package with an ignored `package-lock.json`; there is no root manifest or workspace. Use `npm install`, not `npm ci`.
+
+Both compose files parse:
 
 ```bash
-docker compose up -d --build mqtt-broker-nodejs nginx-inner haproxy
-docker compose config -q          # cheap syntax check
+docker compose config -q
+docker compose -f dashboard/docker-compose.yml config -q
 ```
 
-Backend sync (`haproxy-syncbackend`) is a separate concern; see the reload caveat below. A clean checkout has only `HAProxy_Gate/backends/empty.cfg`, so HAProxy has no DHT target and MQTT routing fails until `dynamic-backend` writes a `mqtt_backend_*` file.
+Core stack:
+
+```bash
+docker compose up -d --build haproxy nginx-inner
+```
+
+**Caveat:** `haproxy` `depends_on` `mqtt-broker-nodejs`, whose committed service mounts only `Nodejs_Broker`, `valkey-cluster`, and `/dev/shm/otmc`. `config.mjs` reads `client_cert/*` and `redis_config.mjs` reads `internal_cert/internal-server.crt` at import time, so that container exits immediately. Ignore it and run the broker from its helper, which mounts all four cert dirs:
+
+```bash
+cd Nodejs_Broker && ./run.x.bash   # interactive node:26 shell
+npm install                        # first run
+node index.mjs
+```
+
+A clean checkout has only `HAProxy_Gate/backends/empty.cfg`, so HAProxy has no DHT target and MQTT connects fail until `dynamic-backend` writes a `mqtt_backend_*` file. Start `haproxy-syncbackend` (see the reload caveat below) or run `HAProxy_Gate/dynamic-backend/run.x.bash` and then `node index.mjs` inside it.
 
 Dashboard stack (nginx serves `dashboard/www` on `:10443`; it does not start `SpaceService`):
 
@@ -29,36 +47,44 @@ Dashboard stack (nginx serves `dashboard/www` on `:10443`; it does not start `Sp
 docker compose -f dashboard/docker-compose.yml up -d
 ```
 
-Then start `SpaceService` from inside its helper, because `server.mjs` reads absolute cert and socket paths:
+Then start `SpaceService` from inside its helper, because `server.mjs` reads absolute cert/socket paths and its `openssl x509 -CAcreateserial` call writes the CA serial into the mounted `client_cert` directory:
 
 ```bash
 cd dashboard/SpaceService && ./run.x.bash   # interactive shell
-npm run dev                                 # inside the shell
+npm install && npm run dev                  # inside the shell
 ```
 
-There is no lint, typecheck, or automated test suite. Every `npm test` script deliberately exits 1; do not treat that as a broken suite. Manual clients: `Nodejs_Broker/test/index.mjs` (UDS) and `test/client_mtls/index.js` (edge mTLS). Other manual checks are in `HAProxy_Gate/README.md` (`openssl s_client`, `socat` admin socket) and `Nginx_Inner/README.md`.
+Node is often unavailable on the host. Use the `run.x.bash` helpers or `node:26` images, which supply the required cert/socket mounts. Run each helper from its own directory — they mount `$(pwd)` and relative paths such as `../backends`, and they open an interactive shell. `test/client_mtls/tc-lua_client_certs.bash` uses `node:24` and mounts the host cert dirs over its gitignored `client_cert/` and `server_cert/`.
 
-Node is often unavailable on the host. Use the `run.x.bash` helpers or `node:26` images, which supply the required cert/socket mounts. Run each helper from its own directory — they mount `$(pwd)` and relative paths such as `../backends`, and they open an interactive shell. `test/client_mtls/tc-lua_client_certs.bash` uses `node:24` and is the exception.
+Manual checks:
+- `Nodejs_Broker/test/index.mjs` is only a UDS smoke test: it connects to `mqtt+unix:///var/run/otmc/mqtt.sock` without the `certchain` AUTH exchange, so it never reaches a successful CONNACK.
+- `test/client_mtls/index.js` is the end-to-end reference client. It hardcodes `mqtt-broker-local10001.wator.xyz:8883` and reads `./client_cert/{client.space.chain.crt,client-space-leaf.key}` plus `./server_cert/server-root.crt`.
+- `HAProxy_Gate/README.md` has `openssl s_client` and `socat` admin-socket commands; `Nginx_Inner/README.md` has internal TLS checks on `:18883`.
 
 ## Configuration and secrets
 
-- Services read certs from absolute `/usr/local/etc/certs/{client_cert,server_cert,internal_cert,valkey-cluster}`. On the host these come from `/opt/otmc-deploy/otmc.secret/broker/...`; dashboard nginx additionally needs `/watorvapor/ecdsa-cert/certbot/etc` for `wator.xyz`. They cannot start correctly outside the compose/run-script mounts.
-- `Nodejs_Broker/config.mjs` and `HAProxy_Gate/dynamic-backend/config.mjs` hardcode the public IPv6 address, Valkey DNS names, and TLS options. There are no env-var overrides; edit those files for another environment.
-- `Nodejs_Broker/redis_config.mjs` derives each broker's `nodeId` from the SHA-256 of the SPKI public key of `internal_cert/internal-server.crt`, encoded as Base58. That same ID is the HAProxy backend suffix and the DHT key.
-- MQTT auth is MQTT 5 enhanced auth, not just the TLS layer: CONNECT -> AUTH `0x18` with method `certchain` -> client returns its certificate chain plus signed `{challenge, timeStamp}` entries. `test/client_mtls/index.js` is the reference client; it hardcodes `mqtt-broker-local10001.wator.xyz:8883` and expects certs in the gitignored `client_cert/` and `server_cert/` directories.
-- ACLs: each certificate's public-key hash yields prefix rules `a/#`, `a/b/#`, `a/b/c/#`. Keys that signed the challenge get `all`; other chain keys get `read`.
+- Services read certs from absolute `/usr/local/etc/certs/{client_cert,server_cert,internal_cert,valkey-cluster}`. On the host these come from `/opt/otmc-deploy/otmc.secret/broker/...`; dashboard nginx additionally needs `/watorvapor/ecdsa-cert/certbot/etc` for `wator.xyz`. They cannot start correctly outside the compose/helper mounts.
+- `Nodejs_Broker/config.mjs` and `HAProxy_Gate/dynamic-backend/config.mjs` hardcode the public IPv6 address, Valkey DNS names, and TLS options (including `rejectUnauthorized: false`). There are no env-var overrides; edit those files for another environment. The `config.mqtt` address is also what other nodes dial on `:18883`, so it must be reachable.
+- ACLs come from `pubKeyHash.slice(-3)` over the root-first chain, i.e. only the deepest three certs contribute. Topics are cumulative (`<h1>/#`, `<h1>/<h2>/#`, `<h1>/<h2>/<h3>/#`). Chain keys that signed the challenge get `all`; the rest get `read`. `write` is never assigned, so signing is required to publish.
+- `SpaceService` has only the `space-1st-level` profile; the CSR CN must match `^OTMC-Client_Intermediate_4_Space_1st_level_Cert$`. It signs with `client_cert/client-broker-inter.{crt,key}` using `client-space-top.{ext,srl}`. `authenticateBearer` is currently a no-op and `SIGN_TOKEN` is unused, so the HTTP API has no real auth.
+
+## Dashboard UI
+
+- `dashboard/www` is committed and served directly by nginx; it is the deployed UI. The pages are hand-written standalone HTML (Vue + antdv loaded from CDN, no build step): `www/setup/{browser,edge}/{leader,follower}/index.html`, linked from `www/setup/index.html`. `browser/*` uses `antdv-next@1.7.0`, `edge/*` uses `ant-design-vue@4.2.6`; do not assume shared components or versions. Only `browser/leader` calls SpaceService (`POST /api/v1/space/sign/client/space-1st-level`); the other pages generate keys/CSRs locally.
+- `dashboard/WebPageService` is a separate Vite source tree. `npm run build` emits Vite's default `dist/` from `index.html` plus `setup/**/index.html`, never `www/`. Its `npm run dev` serves over a UDS (`/var/run/otmc/dashboard.sock` in the dashboard shm) with HMR pointed at `otmc-dashboard.wator.xyz:443`, so localhost:5173 does not behave like a normal dev server.
 
 ## Valkey cluster
 
-Production uses the three host-specific deployments under `ValKey-Cluster/`, not the root compose `valkey` service. Create the cluster once with the `valkey-cli --cluster create` command in `ValKey-Cluster/REDAME.MD`; each node's `cluster-announce-hostname` must match its directory/domain. Nodes serve TLS only on `6379` (`port 0`).
+Production uses the three host-specific deployments under `ValKey-Cluster/`, not the root compose `valkey` service. Create the cluster once with the `valkey-cli --cluster create` command in `ValKey-Cluster/REDAME.MD` (note the misspelling); each node's `cluster-announce-hostname` must match its directory/domain. Nodes serve TLS only on `6379` (`port 0`). All three compose files use `container_name: valkey-dts`, so they are meant for three different hosts — do not start more than one on the same machine.
 
-The root `valkey` service is stale: its bind source `./valkey/valkey.conf` is an empty directory, so it cannot start as configured. Prefer `ValKey-Cluster/`.
+The root `valkey` service is stale: its bind source `./valkey/valkey.conf` is a directory, so it cannot start as configured. Prefer `ValKey-Cluster/`.
 
 ## Known traps
 
 - `haproxy-syncbackend` in the root compose has no Docker socket or CLI, yet `backend_in_haproxy.mjs` calls `docker kill -s HUP otmc-haproxy`. For dynamic reloads use `HAProxy_Gate/dynamic-backend/run.x.bash` (mounts `/var/run/docker.sock` and `/usr/bin/docker`; opens a shell, then run `node index.mjs`), or reload manually.
+- Backends added through the HAProxy runtime API (`socat ... add backend/server`) are lost on the next reload. The files in `HAProxy_Gate/backends/` are the real source of truth.
+- `dynamic-backend` only adds backends; it never deletes them. A decommissioned node keeps its `mqtt_backend_*.cfg` and stays a routing candidate until you remove the file and reload.
 - `mqtt_route.lua`'s `REDIS_HOST`/`REDIS_PORT` constants (`127.0.0.1:16379`) are unused/stale; routing only sees backends currently in `core.backends`, i.e. generated cfg files after a reload.
 - Generated backend files are ignored by `HAProxy_Gate/backends/.gitignore`; never commit them. Keep only `empty.cfg` (the compose command points HAProxy at the whole `backends/` directory).
-- `CXX_Broker` builds with Clang and C++26: `cmake -S CXX_Broker -B build && cmake --build build -j`. It fetches `async_mqtt` 10.3.0 from GitHub, and the binary listens on hardcoded `/dev/shm/mqtt/async_mqtt_broker.sock` (it ignores the `--socket` argument passed by `entrypoint.bash`).
-- `dashboard/WebPageService` `npm run build` emits Vite's default `dist/`, but the dashboard nginx serves the checked-in `dashboard/www`; copy/sync the build or set `build.outDir` before deploying. Current vite inputs do not generate the tracked `www/setup/browser/*` pages.
-- `SpaceService` only accepts CNs matching its hardcoded regex and signs with files in `/usr/local/etc/certs/client_cert`; changing profiles requires editing `server.mjs`. Its `authenticateBearer` middleware is currently a no-op, so the HTTP API has no real auth.
+- Broker process landmines: `ClientSession.delete()` dereferences `internal.acl`, which only exists after a successful AUTH, so a client that disconnects or fails AUTH can throw from the socket close handler and take the process down. QoS 2 is incomplete (PUBREC is sent, PUBREL/PUBCOMP are never handled), and a client with overlapping subscriptions can receive duplicate forwardings.
+- `CXX_Broker` builds with Clang and C++26 modules: `cmake -S CXX_Broker -B build && cmake --build build -j`. `CMakeLists.txt` requires CMake `4.2.0` (use the `ubuntu:26.04` build image), needs Boost, and fetches `async_mqtt` 10.3.0 from GitHub. The binary listens on hardcoded `/dev/shm/mqtt/async_mqtt_broker.sock`; `main()` takes no arguments, so the `--socket` flag in `entrypoint.bash` is ignored.
