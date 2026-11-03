@@ -76,6 +76,7 @@
     .accent-green  { --accent: #389e0d; --accent-soft: #f4fbe9; --accent-edge: #d3efb4; }
     .accent-cyan   { --accent: #08979c; --accent-soft: #ecfffd; --accent-edge: #b5eee9; }
     .accent-orange { --accent: #d46b08; --accent-soft: #fff8ec; --accent-edge: #ffdca0; }
+    .accent-purple { --accent: #722ed1; --accent-soft: #f7f0ff; --accent-edge: #dfccff; }
 
     .section.ant-card {
       border-radius: 10px;
@@ -126,6 +127,14 @@
     }
     .type-hint b { color: #003eb3; }
 
+    .type-hint.hint-purple {
+      color: #531dab;
+      background: #f7f0ff;
+      border-color: #dfccff;
+      border-left-color: #722ed1;
+    }
+    .type-hint.hint-purple b { color: #391085; }
+
     /* ===== 生成 / 存储 提示微调 ===== */
     .gen-warn {
       margin: 12px 0 0;
@@ -138,6 +147,15 @@
       border-left: 3px solid #d46b08;
       border-radius: 0 8px 8px 0;
     }
+
+    .cert-card {
+      padding: 12px 14px;
+      border: 1px solid #dfccff;
+      border-radius: 8px;
+      background: #fcfaff;
+      height: 100%;
+    }
+    .cert-card.is-empty { opacity: .55; }
 
     @media (max-width: 768px) {
       .page-header {
@@ -386,8 +404,195 @@ authorityKeyIdentifier = keyid,issuer</pre>
             </a-typography-paragraph>
           </a-card>
 
-          <!-- ④ 安全说明 -->
-          <a-card class="section accent-orange" title="④ 关于此安全方案的边界说明">
+          <!-- ④ 导入其他设备签发的证书（叶子 + 上级 CA，整体粘贴） -->
+          <a-card class="section accent-purple" title="④ 导入其他设备签发的证书（叶子 + 上级 CA，整体粘贴）">
+            <div class="type-hint hint-purple">
+              由领头者页面为本设备 CSR 签发的 <b>Client Leaf 叶子证书</b>，以及对应的
+              <b>Space 2nd-Level CA</b> 和 <b>Space 1st-Level CA</b> 证书，
+              可一次性整体粘贴到下方输入框（PEM 格式，三张证书首尾相接即可，顺序不限），
+              系统会自动识别各自角色并保存到 IndexedDB。
+              本页面<b>只保存公钥证书，不保存任何私钥</b>。
+            </div>
+
+            <a-form layout="vertical">
+              <a-form-item label="证书链 PEM（三张证书可一次粘贴，顺序任意）">
+                <a-textarea
+                  v-model:value="importForm.chainPem"
+                  :rows="16"
+                  class="pem-text"
+                  placeholder="-----BEGIN CERTIFICATE-----&#10;... 叶子证书 ...&#10;-----END CERTIFICATE-----&#10;-----BEGIN CERTIFICATE-----&#10;... 2 级 CA ...&#10;-----END CERTIFICATE-----&#10;-----BEGIN CERTIFICATE-----&#10;... 1 级 CA ...&#10;-----END CERTIFICATE-----"
+                />
+              </a-form-item>
+            </a-form>
+
+            <a-alert
+              v-if="importErrors.chain"
+              type="error"
+              show-icon
+              :message="importErrors.chain"
+              style="margin-bottom: 12px"
+            ></a-alert>
+
+            <a-space wrap style="margin-bottom: 12px">
+              <a-button type="primary" :loading="importLoading" @click="onParseChain">解析证书链</a-button>
+              <a-button
+                type="primary"
+                ghost
+                :loading="importSaving"
+                :disabled="!importInfo.leaf || !importInfo.top || !importInfo.inter"
+                @click="onSaveAll"
+              >
+                保存全部到 IndexedDB
+              </a-button>
+              <a-button :loading="importLoading" @click="loadImportedFromDb(false)">从 IndexedDB 加载</a-button>
+              <a-button danger :disabled="!importedLeafRecord && !importedTopRecord && !importedInterRecord" @click="onClearImportedFromDb">
+                清除 IndexedDB 中的导入证书
+              </a-button>
+            </a-space>
+
+            <!-- 链关系校验 -->
+            <div v-if="leafIssuerMatchesInter !== null || interIssuerMatchesTop !== null" style="margin-bottom: 12px">
+              <a-alert
+                v-if="leafIssuerMatchesInter === true"
+                type="success" show-icon
+                message="叶子证书 → 2 级 CA：叶子证书的 Issuer 与 Space 2nd-Level CA 的 Subject 一致。"
+                style="margin-bottom: 8px"
+              />
+              <a-alert
+                v-else-if="leafIssuerMatchesInter === false"
+                type="warning" show-icon
+                message="叶子证书 → 2 级 CA：叶子证书的 Issuer 与 Space 2nd-Level CA 的 Subject 不一致，请确认证书链。"
+                style="margin-bottom: 8px"
+              />
+              <a-alert
+                v-if="interIssuerMatchesTop === true"
+                type="success" show-icon
+                message="2 级 CA → 1 级 CA：Space 2nd-Level CA 的 Issuer 与 Space 1st-Level CA 的 Subject 一致。"
+                style="margin-bottom: 8px"
+              />
+              <a-alert
+                v-else-if="interIssuerMatchesTop === false"
+                type="warning" show-icon
+                message="2 级 CA → 1 级 CA：Space 2nd-Level CA 的 Issuer 与 Space 1st-Level CA 的 Subject 不一致，请确认证书链。"
+                style="margin-bottom: 8px"
+              />
+            </div>
+
+            <!-- 三张证书的解析结果并排 -->
+            <a-row :gutter="16">
+              <a-col :xs="24" :md="8">
+                <div class="cert-card" :class="{ 'is-empty': !importInfo.leaf }">
+                  <div class="pem-head">
+                    <span>
+                      <a-typography-text strong>叶子证书 (Client Leaf)</a-typography-text>
+                      <a-tag v-if="importInfo.leaf" color="blue" style="margin-left: 8px">CA:FALSE</a-tag>
+                    </span>
+                  </div>
+                  <template v-if="importInfo.leaf">
+                    <a-descriptions :column="1" size="small" bordered>
+                      <a-descriptions-item label="Subject"><span class="mono">{{ importInfo.leaf.subject }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Issuer"><span class="mono">{{ importInfo.leaf.issuer }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Serial"><span class="mono">{{ importInfo.leaf.serial }}</span></a-descriptions-item>
+                      <a-descriptions-item label="有效期"><span class="mono">{{ importInfo.leaf.notBefore }} → {{ importInfo.leaf.notAfter }}</span></a-descriptions-item>
+                    </a-descriptions>
+                  </template>
+                  <a-typography-text v-else type="secondary">未识别到叶子证书</a-typography-text>
+                </div>
+              </a-col>
+
+              <a-col :xs="24" :md="8">
+                <div class="cert-card" :class="{ 'is-empty': !importInfo.inter }">
+                  <div class="pem-head">
+                    <span>
+                      <a-typography-text strong>Space 2nd-Level CA</a-typography-text>
+                      <a-tag v-if="importInfo.inter" color="orange" style="margin-left: 8px">CA:TRUE · pathlen:0</a-tag>
+                    </span>
+                  </div>
+                  <template v-if="importInfo.inter">
+                    <a-descriptions :column="1" size="small" bordered>
+                      <a-descriptions-item label="Subject"><span class="mono">{{ importInfo.inter.subject }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Issuer"><span class="mono">{{ importInfo.inter.issuer }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Serial"><span class="mono">{{ importInfo.inter.serial }}</span></a-descriptions-item>
+                      <a-descriptions-item label="有效期"><span class="mono">{{ importInfo.inter.notBefore }} → {{ importInfo.inter.notAfter }}</span></a-descriptions-item>
+                    </a-descriptions>
+                  </template>
+                  <a-typography-text v-else type="secondary">未识别到 2 级 CA</a-typography-text>
+                </div>
+              </a-col>
+
+              <a-col :xs="24" :md="8">
+                <div class="cert-card" :class="{ 'is-empty': !importInfo.top }">
+                  <div class="pem-head">
+                    <span>
+                      <a-typography-text strong>Space 1st-Level CA</a-typography-text>
+                      <a-tag v-if="importInfo.top" color="red" style="margin-left: 8px">CA:TRUE · pathlen:2</a-tag>
+                    </span>
+                  </div>
+                  <template v-if="importInfo.top">
+                    <a-descriptions :column="1" size="small" bordered>
+                      <a-descriptions-item label="Subject"><span class="mono">{{ importInfo.top.subject }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Issuer"><span class="mono">{{ importInfo.top.issuer }}</span></a-descriptions-item>
+                      <a-descriptions-item label="Serial"><span class="mono">{{ importInfo.top.serial }}</span></a-descriptions-item>
+                      <a-descriptions-item label="有效期"><span class="mono">{{ importInfo.top.notBefore }} → {{ importInfo.top.notAfter }}</span></a-descriptions-item>
+                    </a-descriptions>
+                  </template>
+                  <a-typography-text v-else type="secondary">未识别到 1 级 CA</a-typography-text>
+                </div>
+              </a-col>
+            </a-row>
+
+            <div v-if="importedLeafRecord || importedTopRecord || importedInterRecord" style="margin-top: 16px">
+              <a-divider style="margin: 8px 0">已保存在 IndexedDB 中的导入证书</a-divider>
+
+              <div v-if="importedLeafRecord" class="pem-block">
+                <div class="pem-head">
+                  <span>
+                    <a-typography-text strong>本设备叶子证书 (Client Leaf)</a-typography-text>
+                    <a-tag color="blue" style="margin-left: 8px">已保存</a-tag>
+                    <a-tag color="default" style="margin-left: 4px">导入时间 {{ importedLeafRecord.importedAt }}</a-tag>
+                  </span>
+                  <a-space>
+                    <a-button size="small" @click="copyText(importedLeafRecord.certPem)">复制</a-button>
+                    <a-button size="small" @click="downloadFile('client-space-leaf.crt', importedLeafRecord.certPem)">下载</a-button>
+                  </a-space>
+                </div>
+                <a-textarea :rows="6" :value="importedLeafRecord.certPem" readonly class="pem-text" />
+              </div>
+
+              <div v-if="importedTopRecord" class="pem-block">
+                <div class="pem-head">
+                  <span>
+                    <a-typography-text strong>Space 1st-Level CA</a-typography-text>
+                    <a-tag color="red" style="margin-left: 8px">已保存</a-tag>
+                    <a-tag color="default" style="margin-left: 4px">导入时间 {{ importedTopRecord.importedAt }}</a-tag>
+                  </span>
+                  <a-space>
+                    <a-button size="small" @click="copyText(importedTopRecord.certPem)">复制</a-button>
+                    <a-button size="small" @click="downloadFile('imported-client-space-top.crt', importedTopRecord.certPem)">下载</a-button>
+                  </a-space>
+                </div>
+                <a-textarea :rows="6" :value="importedTopRecord.certPem" readonly class="pem-text" />
+              </div>
+
+              <div v-if="importedInterRecord" class="pem-block">
+                <div class="pem-head">
+                  <span>
+                    <a-typography-text strong>Space 2nd-Level CA</a-typography-text>
+                    <a-tag color="orange" style="margin-left: 8px">已保存</a-tag>
+                    <a-tag color="default" style="margin-left: 4px">导入时间 {{ importedInterRecord.importedAt }}</a-tag>
+                  </span>
+                  <a-space>
+                    <a-button size="small" @click="copyText(importedInterRecord.certPem)">复制</a-button>
+                    <a-button size="small" @click="downloadFile('imported-client-space-inter.crt', importedInterRecord.certPem)">下载</a-button>
+                  </a-space>
+                </div>
+                <a-textarea :rows="6" :value="importedInterRecord.certPem" readonly class="pem-text" />
+              </div>
+            </div>
+          </a-card>
+
+          <!-- ⑤ 安全说明 -->
+          <a-card class="section accent-orange" title="⑤ 关于此安全方案的边界说明">
             <a-typography-paragraph>
               <b>适用场景</b>：私钥仅需在<b>当前浏览器内</b>完成签名操作，且不需要将 .key 文件分发给其他 MQTT 客户端。
             </a-typography-paragraph>
@@ -554,32 +759,218 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
 }
 
+/* ===========================================================================
+ * 极简 X.509 / DER 解析
+ * ========================================================================= */
+
+function readTLV(buf, offset) {
+  const start = offset;
+  const tag = buf[offset++];
+  let len = buf[offset++];
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    len = 0;
+    for (let i = 0; i < n; i++) len = (len << 8) | buf[offset++];
+  }
+  const valueStart = offset;
+  const valueEnd = offset + len;
+  return { tag, len, valueStart, valueEnd, rawStart: start, rawEnd: valueEnd };
+}
+
+function decodeDerString(tag, bytes) {
+  if (tag === 0x1e) {
+    let s = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      s += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    }
+    return s;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function decodeOid(buf, tlv) {
+  const bytes = buf.subarray(tlv.valueStart, tlv.valueEnd);
+  const parts = [];
+  let v = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    v = (v << 7) | (bytes[i] & 0x7f);
+    if (!(bytes[i] & 0x80)) { parts.push(v); v = 0; }
+  }
+  if (parts.length) {
+    const first = parts[0];
+    const a = first < 40 ? 0 : first < 80 ? 1 : 2;
+    parts[0] = a;
+    parts.splice(1, 0, first - a * 40);
+  }
+  return parts.join('.');
+}
+
+const OID_SHORT = {
+  '2.5.4.3': 'CN', '2.5.4.6': 'C', '2.5.4.7': 'L',
+  '2.5.4.8': 'ST', '2.5.4.10': 'O', '2.5.4.11': 'OU',
+  '2.5.4.5': 'serialNumber', '1.2.840.113549.1.9.1': 'emailAddress',
+};
+
+function parseNameAttrs(buf, tlv) {
+  const attrs = [];
+  let off = tlv.valueStart;
+  while (off < tlv.valueEnd) {
+    const rdn = readTLV(buf, off);
+    let aoff = rdn.valueStart;
+    while (aoff < rdn.valueEnd) {
+      const atv = readTLV(buf, aoff);
+      const oidTlv = readTLV(buf, atv.valueStart);
+      const valTlv = readTLV(buf, oidTlv.rawEnd);
+      attrs.push({
+        oid: decodeOid(buf, oidTlv),
+        value: decodeDerString(valTlv.tag, buf.subarray(valTlv.valueStart, valTlv.valueEnd)),
+      });
+      aoff = atv.rawEnd;
+    }
+    off = rdn.rawEnd;
+  }
+  return attrs;
+}
+
+function formatNameAttrs(attrs) {
+  return attrs
+    .map((a) => `${OID_SHORT[a.oid] || a.oid}=${a.value}`)
+    .join(', ');
+}
+
+function parseDerTime(tag, str) {
+  let yyyy, mm, dd, hh, mi, ss;
+  if (tag === 0x17) {
+    const yy = parseInt(str.slice(0, 2), 10);
+    yyyy = String(yy >= 50 ? 1900 + yy : 2000 + yy);
+    mm = str.slice(2, 4); dd = str.slice(4, 6);
+    hh = str.slice(6, 8); mi = str.slice(8, 10); ss = str.slice(10, 12);
+  } else if (tag === 0x18) {
+    yyyy = str.slice(0, 4); mm = str.slice(4, 6); dd = str.slice(6, 8);
+    hh = str.slice(8, 10); mi = str.slice(10, 12); ss = str.slice(12, 14);
+  } else {
+    return str;
+  }
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} UTC`;
+}
+
+function parseX509Pem(pem) {
+  const b64 = String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  if (!b64) throw new Error('证书 PEM 内容为空');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+
+  const cert = readTLV(buf, 0);
+  if (cert.tag !== 0x30) throw new Error('证书结构异常：缺少外层 SEQUENCE');
+  const tbs  = readTLV(buf, cert.valueStart);
+  if (tbs.tag !== 0x30) throw new Error('证书结构异常：缺少 TBSCertificate');
+
+  let off = tbs.valueStart;
+  if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd;
+
+  const serialTlv = readTLV(buf, off);
+  const serialBytes = buf.subarray(serialTlv.valueStart, serialTlv.valueEnd);
+  const serial = Array.from(serialBytes, (b) => b.toString(16).padStart(2, '0'))
+    .join(':').toUpperCase();
+  off = serialTlv.rawEnd;
+
+  off = readTLV(buf, off).rawEnd;
+
+  const issuerTlv = readTLV(buf, off);
+  const issuerAttrs = parseNameAttrs(buf, issuerTlv);
+  const issuerRaw = buf.slice(issuerTlv.rawStart, issuerTlv.rawEnd);
+  off = issuerTlv.rawEnd;
+
+  const validityTlv = readTLV(buf, off);
+  const nbTlv = readTLV(buf, validityTlv.valueStart);
+  const naTlv = readTLV(buf, nbTlv.rawEnd);
+  const notBefore = parseDerTime(nbTlv.tag,
+    new TextDecoder().decode(buf.subarray(nbTlv.valueStart, nbTlv.valueEnd)));
+  const notAfter  = parseDerTime(naTlv.tag,
+    new TextDecoder().decode(buf.subarray(naTlv.valueStart, naTlv.valueEnd)));
+  off = validityTlv.rawEnd;
+
+  const subjectTlv = readTLV(buf, off);
+  const subjectAttrs = parseNameAttrs(buf, subjectTlv);
+  const subjectRaw = buf.slice(subjectTlv.rawStart, subjectTlv.rawEnd);
+  off = subjectTlv.rawEnd;
+
+  const spkiTlv = readTLV(buf, off);
+  off = spkiTlv.rawEnd;
+
+  let isCa = false;
+  let pathLen = null;
+  let hasBasicConstraints = false;
+  let basicConstraintsCritical = false;
+
+  while (off < tbs.valueEnd) {
+    const f = readTLV(buf, off);
+    if (f.tag === 0xa3) {
+      const extsSeq = readTLV(buf, f.valueStart);
+      let eoff = extsSeq.valueStart;
+      while (eoff < extsSeq.valueEnd) {
+        const ext = readTLV(buf, eoff);
+        const eidTlv = readTLV(buf, ext.valueStart);
+        const eid = decodeOid(buf, eidTlv);
+        let v = eidTlv.rawEnd;
+        let critical = false;
+        if (v < ext.valueEnd && buf[v] === 0x01) {
+          const bTlv = readTLV(buf, v);
+          critical = buf[bTlv.valueStart] !== 0;
+          v = bTlv.rawEnd;
+        }
+        const valTlv = readTLV(buf, v);
+        const valueBytes = buf.subarray(valTlv.valueStart, valTlv.valueEnd);
+
+        if (eid === '2.5.29.19') {
+          hasBasicConstraints = true;
+          basicConstraintsCritical = critical;
+          const bc = readTLV(valueBytes, 0);
+          let boff = bc.valueStart;
+          if (boff < bc.valueEnd && valueBytes[boff] === 0x01) {
+            const bTlv = readTLV(valueBytes, boff);
+            isCa = valueBytes[bTlv.valueStart] !== 0;
+            boff = bTlv.rawEnd;
+          }
+          if (boff < bc.valueEnd && valueBytes[boff] === 0x02) {
+            const iTlv = readTLV(valueBytes, boff);
+            pathLen = 0;
+            for (let i = iTlv.valueStart; i < iTlv.valueEnd; i++) {
+              pathLen = (pathLen << 8) | valueBytes[i];
+            }
+          }
+        }
+        eoff = ext.rawEnd;
+      }
+      break;
+    }
+    off = f.rawEnd;
+  }
+
+  return {
+    serial,
+    issuer:  formatNameAttrs(issuerAttrs),
+    subject: formatNameAttrs(subjectAttrs),
+    notBefore,
+    notAfter,
+    issuerRaw,
+    subjectRaw,
+    isCa,
+    pathLen,
+    hasBasicConstraints,
+    basicConstraintsCritical,
+  };
+}
+
 /* ============================================================
- *  IndexedDB 层 —— 共用库、能自愈
- *
- *  - DB_VERSION 是全站统一版本；库不存在时按此版本创建。
- *  - 如果库里已有但缺少本页需要的 store（历史遗留库，比如其他
- *    页面先用版本 1 建了库、且没建这个 store），不报错，而是
- *    在 **当前库版本基础上 +1** 升级一次，把 STORE_NAMES 全部
- *    补齐，然后正常返回可用连接。
- *  - 如果打开时抛 VersionError（库里版本比 DB_VERSION 高，
- *    通常是自愈 +1 后版本被抬高了），则改用「不带版本号」打开
- *    （即取当前版本），再检查 store；仍缺则同样 +1 补建。
- *  - 所有升级路径的 onupgradeneeded 都用 ensureAllStores 建全
- *    STORE_NAMES，避免任何页面先打开时漏建。
- *
- *  提示：其他页面理想情况下也用「不带版本号 open」+ 同一份
- *  STORE_NAMES，这样任何页面先打开都不会把别人卡在 VersionError。
+ *  IndexedDB 层
  * ============================================================ */
 const DB_NAME = 'omtc-mtls-keystore';
-const DB_VERSION = 2; // 全站统一；库不存在时按此版本创建
+const DB_VERSION = 2;
 
-// 全站所有页面共用的一份 store 清单（各页面升级时都 ensure 同一份）
 const STORE_NAMES = [
   'browser_follower_cert_and_keys',
-  // 如有其他 store，按实际情况补全，例如：
-  // 'browser_leader_cert_and_keys',
-  // 'browser_space_ca_cert_and_keys',
 ];
 
 const STORE_NAME = 'browser_follower_cert_and_keys';
@@ -605,7 +996,6 @@ function openRaw(name, version) {
       return reject(e);
     }
 
-    // 任何升级路径都建全 STORE_NAMES
     req.onupgradeneeded = () => ensureAllStores(req.result);
 
     req.onblocked = () => {
@@ -621,23 +1011,18 @@ function openRaw(name, version) {
 async function openWithRepair() {
   let db;
 
-  // 1) 按统一版本打开；库不存在会顺带创建并建全 store
   try {
     db = await openRaw(DB_NAME, DB_VERSION);
   } catch (e) {
     if (e && e.name === 'VersionError') {
-      // 库里版本比 DB_VERSION 高（自愈 +1 后常见），按当前版本打开
       db = await openRaw(DB_NAME);
     } else {
       throw e;
     }
   }
 
-  // 2) store 齐全 → 直接用
   if (hasAllStores(db)) return db;
 
-  // 3) 缺 store → 在当前版本基础上 +1 升级补建
-  //    IndexedDB 无法在已打开的连接上新增 object store，只能走升级
   const nextVersion = db.version + 1;
   db.close();
 
@@ -658,7 +1043,6 @@ function openDB() {
     return db;
   });
 
-  // 失败不缓存，允许用户刷新/重试后重新打开
   dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
 }
@@ -693,6 +1077,82 @@ async function dbDelete(key) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('删除事务被中止'));
   });
+}
+
+/* ============================================================
+ * PEM 证书链拆分 + 自动识别
+ * ============================================================ */
+const PEM_CERT_RE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+function splitPemCertificates(text) {
+  const s = String(text || '');
+  const matches = s.match(PEM_CERT_RE) || [];
+  return matches.map((m) => m.trim());
+}
+
+function derBytesEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * 从若干已解析的证书中识别 leaf / inter / top。
+ * 优先用 basicConstraints（isCa、pathLen），辅以 Issuer/Subject 链关系。
+ */
+function classifyCertificates(parsed) {
+  if (!parsed || parsed.length === 0) return { leaf: null, inter: null, top: null };
+
+  let leaf = null;
+  let inter = null;
+  let top = null;
+
+  // 1) 明确叶子：!isCa
+  const leaves = parsed.filter((c) => !c.info.isCa);
+  if (leaves.length >= 1) leaf = leaves[0];
+
+  // 2) 明确 CA
+  const cas = parsed.filter((c) => c.info.isCa);
+
+  if (cas.length >= 2) {
+    // 优先按 Issuer/Subject 链关系判断
+    // 下级 CA 的 Issuer == 上级 CA 的 Subject
+    const findIssuerOf = (target) =>
+      cas.find((c) => c !== target && derBytesEqual(target.info.issuerRaw, c.info.subjectRaw));
+
+    // 找出 Issuer 被别人 Subject 匹配的那张为下级
+    // 找出 Subject 是别人 Issuer 的那张为上级
+    const pairs = [];
+    for (const a of cas) {
+      for (const b of cas) {
+        if (a === b) continue;
+        if (derBytesEqual(a.info.issuerRaw, b.info.subjectRaw)) {
+          pairs.push({ child: a, parent: b });
+        }
+      }
+    }
+
+    if (pairs.length >= 1) {
+      inter = pairs[0].child;
+      top = pairs[0].parent;
+    } else {
+      // 兜底：按 pathLen 升序
+      const sorted = [...cas].sort((x, y) => {
+        const xp = x.info.pathLen == null ? 99 : x.info.pathLen;
+        const yp = y.info.pathLen == null ? 99 : y.info.pathLen;
+        return xp - yp;
+      });
+      inter = sorted[0];
+      top = sorted[1];
+    }
+  } else if (cas.length === 1) {
+    // 只有一张 CA：根据 pathLen 决定
+    if (cas[0].info.pathLen === 0) inter = cas[0];
+    else top = cas[0];
+  }
+
+  return { leaf, inter, top };
 }
 
 const app = createApp({
@@ -772,6 +1232,277 @@ const app = createApp({
 
     const RECORD_KEY = 'client-space-leaf';
 
+    /* ===== 导入外部签发的证书链（叶子 + 上级 CA，整体粘贴） ===== */
+    const IMPORT_KEYS = {
+      top: 'imported-client-space-top',
+      inter: 'imported-client-space-inter',
+    };
+
+    const importForm = reactive({ chainPem: '' });
+    const importInfo = reactive({ leaf: null, inter: null, top: null });
+    const importErrors = reactive({ chain: '' });
+    const importLoading = ref(false);
+    const importSaving = ref(false);
+    const importedTopRecord = ref(null);
+    const importedInterRecord = ref(null);
+    const importedLeafRecord = ref(null);
+
+    const leafIssuerMatchesInter = computed(() => {
+      const l = importInfo.leaf;
+      const i = importInfo.inter;
+      if (!l || !i || !l.issuerRaw || !i.subjectRaw) return null;
+      return derBytesEqual(l.issuerRaw, i.subjectRaw);
+    });
+
+    const interIssuerMatchesTop = computed(() => {
+      const i = importInfo.inter;
+      const t = importInfo.top;
+      if (!i || !t || !i.issuerRaw || !t.subjectRaw) return null;
+      return derBytesEqual(i.issuerRaw, t.subjectRaw);
+    });
+
+    function parseChainInternal(silent) {
+      importErrors.chain = '';
+      importInfo.leaf = null;
+      importInfo.inter = null;
+      importInfo.top = null;
+
+      const text = (importForm.chainPem || '').trim();
+      if (!text) {
+        if (!silent) importErrors.chain = '请粘贴证书链 PEM';
+        return false;
+      }
+
+      const pems = splitPemCertificates(text);
+      if (pems.length === 0) {
+        if (!silent) importErrors.chain = '未找到任何 PEM 证书块（需要 -----BEGIN CERTIFICATE----- 标记）';
+        return false;
+      }
+
+      const parsed = [];
+      for (let i = 0; i < pems.length; i++) {
+        try {
+          const info = parseX509Pem(pems[i]);
+          parsed.push({ pem: pems[i], info });
+        } catch (e) {
+          if (!silent) importErrors.chain = `第 ${i + 1} 张证书解析失败：${e && e.message ? e.message : e}`;
+          return false;
+        }
+      }
+
+      const cls = classifyCertificates(parsed);
+      importInfo.leaf = cls.leaf ? { pem: cls.leaf.pem, ...cls.leaf.info } : null;
+      importInfo.inter = cls.inter ? { pem: cls.inter.pem, ...cls.inter.info } : null;
+      importInfo.top = cls.top ? { pem: cls.top.pem, ...cls.top.info } : null;
+
+      if (!silent) {
+        if (pems.length < 3) {
+          message.warning(`识别到 ${pems.length} 张证书（预期 3 张：叶子 + 2 级 CA + 1 级 CA）`);
+        } else {
+          message.success(`已识别 ${pems.length} 张证书并完成分类`);
+        }
+      }
+      return true;
+    }
+
+    function onParseChain() {
+      parseChainInternal(false);
+    }
+
+    function buildLeafRecordView(leafRec) {
+      return {
+        certPem: leafRec.certPem,
+        serial: leafRec.certSerial || '',
+        issuer: leafRec.certIssuer || '',
+        notBefore: leafRec.certNotBefore || '',
+        notAfter: leafRec.certNotAfter || '',
+        importedAt: leafRec.certImportedAt || leafRec.certIssuedAt || '',
+        subject: leafRec.subject || '',
+      };
+    }
+
+    async function saveLeafCert() {
+      if (!indexedDbOk.value) { message.error('IndexedDB 不可用，无法保存'); return false; }
+      if (!importInfo.leaf) { message.error('未识别到叶子证书，无法保存'); return false; }
+      if (importInfo.leaf.isCa) {
+        message.error('识别到的“叶子证书”实际为 CA 证书（CA:TRUE），已跳过。');
+        return false;
+      }
+
+      const leafRec = await dbGet(RECORD_KEY);
+      if (!leafRec || !leafRec.privateKey) {
+        message.error('本机尚未生成 Client Leaf 密钥对，请先点击“生成密钥对与 CSR”后再导入叶子证书。');
+        return false;
+      }
+
+      leafRec.certPem = importInfo.leaf.pem;
+      leafRec.certSerial = importInfo.leaf.serial;
+      leafRec.certIssuer = importInfo.leaf.issuer;
+      leafRec.certNotBefore = importInfo.leaf.notBefore;
+      leafRec.certNotAfter = importInfo.leaf.notAfter;
+      leafRec.certImportedAt = new Date().toISOString();
+
+      try {
+        await dbPut(RECORD_KEY, leafRec);
+        importedLeafRecord.value = buildLeafRecordView(leafRec);
+        return true;
+      } catch (e) {
+        console.error(e);
+        message.error('保存叶子证书失败：' + (e && e.message ? e.message : e));
+        return false;
+      }
+    }
+
+    async function saveCaCert(kind) {
+      if (!indexedDbOk.value) { message.error('IndexedDB 不可用，无法保存'); return false; }
+      const info = importInfo[kind];
+      if (!info) { message.error(`未识别到 ${kind === 'top' ? '1 级' : '2 级'} CA 证书`); return false; }
+      if (!info.isCa) {
+        message.error(`识别到的 ${kind === 'top' ? '1 级' : '2 级'} 证书不是 CA 证书（CA:FALSE），已跳过。`);
+        return false;
+      }
+
+      const dbKey = kind === 'top' ? IMPORT_KEYS.top : IMPORT_KEYS.inter;
+      const label = kind === 'top' ? 'Space 1st-Level CA' : 'Space 2nd-Level CA';
+
+      const record = {
+        version: 1,
+        kind: 'space-ca-cert',
+        level: kind === 'top' ? 'space-top' : 'space-inter',
+        label,
+        certPem: info.pem,
+        serial: info.serial,
+        issuer: info.issuer,
+        subject: info.subject,
+        notBefore: info.notBefore,
+        notAfter: info.notAfter,
+        isCa: info.isCa,
+        pathLen: info.pathLen,
+        importedAt: new Date().toISOString(),
+        importedBy: 'follower-page',
+      };
+
+      try {
+        await dbPut(dbKey, record);
+        if (kind === 'top') importedTopRecord.value = record;
+        else importedInterRecord.value = record;
+        return true;
+      } catch (e) {
+        console.error(e);
+        message.error(`${label} 保存失败：` + (e && e.message ? e.message : e));
+        return false;
+      }
+    }
+
+    async function onSaveAll() {
+      if (!importInfo.leaf || !importInfo.top || !importInfo.inter) {
+        const ok = parseChainInternal(true);
+        if (!ok || !importInfo.leaf || !importInfo.top || !importInfo.inter) {
+          message.error('证书链不完整，请先粘贴并解析三张证书（叶子 + 2 级 CA + 1 级 CA）。');
+          return;
+        }
+      }
+
+      importSaving.value = true;
+      try {
+        let okCount = 0;
+        if (await saveLeafCert()) okCount++;
+        if (await saveCaCert('top')) okCount++;
+        if (await saveCaCert('inter')) okCount++;
+        if (okCount === 3) {
+          message.success('三张证书已全部保存到 IndexedDB');
+        } else if (okCount > 0) {
+          message.warning(`已保存 ${okCount}/3 张证书，请检查上方错误信息`);
+        }
+      } finally {
+        importSaving.value = false;
+      }
+    }
+
+    async function loadImportedFromDb(silent) {
+      if (!indexedDbOk.value) {
+        if (!silent) message.error('IndexedDB 不可用');
+        return;
+      }
+      if (!silent) importLoading.value = true;
+      try {
+        const t = await dbGet(IMPORT_KEYS.top);
+        const i = await dbGet(IMPORT_KEYS.inter);
+        const leafRec = await dbGet(RECORD_KEY);
+
+        importedTopRecord.value = t || null;
+        importedInterRecord.value = i || null;
+
+        const parts = [];
+        if (leafRec && leafRec.certPem) parts.push(leafRec.certPem.trim());
+        if (i && i.certPem) parts.push(i.certPem.trim());
+        if (t && t.certPem) parts.push(t.certPem.trim());
+
+        if (leafRec && leafRec.certPem) {
+          importedLeafRecord.value = buildLeafRecordView(leafRec);
+        } else {
+          importedLeafRecord.value = null;
+        }
+
+        if (parts.length) {
+          importForm.chainPem = parts.join('\n');
+          parseChainInternal(true);
+        } else {
+          importForm.chainPem = '';
+          importInfo.leaf = null;
+          importInfo.inter = null;
+          importInfo.top = null;
+          importErrors.chain = '';
+        }
+
+        if (!silent) {
+          if (parts.length) message.success('已从 IndexedDB 加载导入的证书');
+          else message.info('IndexedDB 中暂无已导入的证书');
+        }
+      } catch (e) {
+        console.error(e);
+        if (!silent) message.error('加载导入证书失败：' + (e && e.message ? e.message : e));
+      } finally {
+        if (!silent) importLoading.value = false;
+      }
+    }
+
+    async function onClearImportedFromDb() {
+      if (!indexedDbOk.value) { message.error('IndexedDB 不可用'); return; }
+      try {
+        await dbDelete(IMPORT_KEYS.top);
+        await dbDelete(IMPORT_KEYS.inter);
+
+        const leafRec = await dbGet(RECORD_KEY);
+        if (leafRec) {
+          delete leafRec.certPem;
+          delete leafRec.certSerial;
+          delete leafRec.certIssuer;
+          delete leafRec.certNotBefore;
+          delete leafRec.certNotAfter;
+          delete leafRec.certImportedAt;
+          delete leafRec.certIssuedAt;
+          await dbPut(RECORD_KEY, leafRec);
+        }
+
+        importedTopRecord.value = null;
+        importedInterRecord.value = null;
+        importedLeafRecord.value = null;
+
+        importForm.chainPem = '';
+        importInfo.leaf = null;
+        importInfo.inter = null;
+        importInfo.top = null;
+        importErrors.chain = '';
+
+        message.success('已清除 IndexedDB 中导入的证书（Client Leaf 私钥保留）');
+      } catch (e) {
+        console.error(e);
+        message.error('清除失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    /* ===== 终端证书：生成 / 加载 / 清除 ===== */
     function fillFormFromAttrs(attrs) {
       if (!Array.isArray(attrs)) return;
       attrs.forEach((a) => { if (a.key in form) form[a.key] = a.value; });
@@ -890,7 +1621,8 @@ const app = createApp({
         });
 
         hasStored.value = true;
-        message.success('Client Leaf 非导出密钥已生成并存入 IndexedDB，CSR 已生成');
+        importedLeafRecord.value = null;
+        message.success('Client Leaf 非导出密钥已生成并存入 IndexedDB，CSR 已生成（旧的导入叶子证书已失效，请重新导入）');
       } catch (e) {
         console.error(e);
         message.error('生成失败：' + (e && e.message ? e.message : e));
@@ -907,11 +1639,12 @@ const app = createApp({
       try {
         await dbDelete(RECORD_KEY);
         hasStored.value = false;
+        importedLeafRecord.value = null;
         Object.assign(result, {
           csrPem: '', publicKeyPem: '',
           subject: '', createdAt: '',
         });
-        message.success('已清除 Client Leaf 的 IndexedDB 密钥');
+        message.success('已清除 Client Leaf 的 IndexedDB 密钥（导入的叶子证书也一并移除）');
       } catch (e) {
         console.error(e);
         message.error('清除失败：' + (e && e.message ? e.message : e));
@@ -960,14 +1693,16 @@ const app = createApp({
       if (!indexedDbOk.value) return;
 
       const stored = await checkStored();
-      if (!stored) return;
-
-      const ok = await loadFromDb(true);
-      if (ok) {
-        message.success('已从 IndexedDB 自动加载 Client Leaf 密钥与 CSR');
-      } else {
-        message.warning('检测到 Client Leaf 已保存的密钥，但自动加载失败，请点击“从 IndexedDB 加载”重试');
+      if (stored) {
+        const ok = await loadFromDb(true);
+        if (ok) {
+          message.success('已从 IndexedDB 自动加载 Client Leaf 密钥与 CSR');
+        } else {
+          message.warning('检测到 Client Leaf 已保存的密钥，但自动加载失败，请点击“从 IndexedDB 加载”重试');
+        }
       }
+
+      await loadImportedFromDb(true);
     });
 
     return {
@@ -977,6 +1712,11 @@ const app = createApp({
       dbName: DB_NAME,
       onGenerate, onLoad, onClear,
       copyText, downloadFile,
+      // 导入外部签发的证书链
+      importForm, importInfo, importErrors, importLoading, importSaving,
+      importedLeafRecord, importedTopRecord, importedInterRecord,
+      leafIssuerMatchesInter, interIssuerMatchesTop,
+      onParseChain, onSaveAll, loadImportedFromDb, onClearImportedFromDb,
     };
   },
 });
