@@ -6,7 +6,6 @@
     <meta name="theme-color" content="#001529" />
     <title>IoT Dashboard · MQTT over WebSocket</title>
 
-    <!-- antdv-next 样式（与 OTMC 页面一致） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.css" />
 
@@ -18,20 +17,11 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* ===== 以下基础样式与原始 PC 布局完全一致 ===== */
-
-        /* Logo：与 OTMC 页面保持一致，折叠时只显示缩写 */
         .logo {
             height: 64px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            font-size: 16px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            white-space: nowrap;
-            overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.5px;
+            white-space: nowrap; overflow: hidden;
         }
 
         .site-header {
@@ -67,10 +57,8 @@
             -webkit-overflow-scrolling: touch;
         }
         .msg-log .t { color: #569cd6; }
-        .msg-log .tp { color: #4ec9b0; }
         .msg-log .err { color: #f48771; }
 
-        /* 替代 List 的告警列表样式 */
         .alert-list { padding: 0; margin: 0; list-style: none; }
         .alert-item {
             display: flex; justify-content: space-between; align-items: center;
@@ -79,7 +67,6 @@
         .alert-item:last-child { border-bottom: none; }
         .alert-item .meta { font-size: 12px; color: #8c8c8c; }
 
-        /* 移动端专用：设备卡片列表（PC 不渲染） */
         .device-cards { display: flex; flex-direction: column; gap: 10px; }
         .device-card {
             border: 1px solid #f0f0f0; border-radius: 8px;
@@ -97,51 +84,84 @@
         .device-card-foot { margin-top: 6px; font-size: 12px; color: #8c8c8c; }
         .empty-tip { text-align: center; color: #8c8c8c; font-size: 13px; padding: 18px 0; }
 
-        /* ============ 移动端（≤768px）才应用的覆盖样式 ============ */
+        /* ===== 传输层 / 协议层 分区样式 ===== */
+        .layer-block {
+            border: 1px dashed #e0e0e0;
+            border-radius: 8px;
+            padding: 12px 12px 2px;
+            margin-bottom: 14px;
+            background: #fcfcfc;
+        }
+        .layer-title {
+            font-size: 12px; font-weight: 600; color: #1677ff;
+            letter-spacing: 0.3px; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .layer-title .badge {
+            background: #e6f4ff; color: #1677ff; border-radius: 4px;
+            font-size: 11px; padding: 1px 6px; font-weight: 500;
+        }
+        .ws-preview {
+            font-size: 12px; color: #595959;
+            background: #f6ffed; border: 1px solid #b7eb8f;
+            border-radius: 6px; padding: 8px 10px; margin-bottom: 12px;
+            word-break: break-all; line-height: 1.7;
+        }
+        .ws-preview code {
+            background: #fff; border: 1px solid #d9d9d9; border-radius: 3px;
+            padding: 0 4px; font-family: 'Consolas', monospace; color: #d4380d;
+        }
+        .ws-preview b { color: #237804; }
+        .ws-preview .muted { color: #8c8c8c; }
+        .ws-preview .err-text { color: #cf1322; }
+
+        /* 证书链状态 */
+        .cert-status-list { list-style: none; margin: 0; padding: 0; }
+        .cert-status-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 0; font-size: 13px;
+            border-bottom: 1px dashed #f0f0f0;
+        }
+        .cert-status-item:last-child { border-bottom: none; }
+        .cert-status-item .dot {
+            width: 8px; height: 8px; border-radius: 50%; flex: none;
+        }
+        .cert-status-item .dot.ok  { background: #52c41a; }
+        .cert-status-item .dot.bad { background: #ff4d4f; }
+        .cert-status-item .dot.warn { background: #faad14; }
+        .cert-status-item .label { font-weight: 500; min-width: 110px; }
+        .cert-status-item .subject {
+            flex: 1; color: #595959; font-family: 'Consolas', monospace;
+            font-size: 12px; word-break: break-all;
+        }
+
         @media (max-width: 768px) {
-            .site-header {
-                height: 56px;
-                padding: 0 8px;
-                line-height: normal;
-            }
+            .site-header { height: 56px; padding: 0 8px; line-height: normal; }
             .header-left { gap: 6px; }
             .header-title { font-size: 15px; }
             .conn-state { font-size: 11px; }
             .header-right { gap: 8px; }
-
-            .ant-layout-content {
-                padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-            }
-
+            .ant-layout-content { padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
             .ant-card-head { padding: 0 12px; min-height: 44px; }
             .ant-card-head-title { font-size: 14px; padding: 10px 0; }
             .ant-card-body { padding: 14px 12px; }
-
             .stat-card .ant-card-body { padding: 12px 14px; }
             .stat-label { font-size: 12px; margin-bottom: 2px; }
             .stat-value { font-size: 20px; }
-
             .chart-box { height: 220px; }
-
             .msg-log { height: 160px; font-size: 11px; padding: 10px; }
-
-            .alert-item {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
-            }
+            .alert-item { flex-direction: column; align-items: flex-start; gap: 4px; }
             .alert-item .meta { font-size: 11px; }
-
-            /* 防止 iOS 输入框聚焦自动放大 */
             .ant-form-item .ant-input,
             .ant-form-item .ant-input-affix-wrapper,
             .ant-form-item textarea.ant-input,
-            .ant-form-item .ant-select-selector {
-                font-size: 16px;
-            }
-
+            .ant-form-item .ant-select-selector { font-size: 16px; }
             .ant-btn { min-height: 32px; }
             .ant-btn-sm { min-height: 30px; padding: 0 10px; }
+            .layer-block { padding: 10px 10px 0; }
+            .ws-preview { font-size: 11px; }
+            .cert-status-item .label { min-width: 80px; font-size: 12px; }
+            .cert-status-item .subject { font-size: 11px; }
         }
 
         @media (max-width: 480px) {
@@ -153,7 +173,6 @@
 <body>
     <div id="app">
         <a-layout style="min-height: 100vh;">
-            <!-- 桌面端左侧导航：结构与原版一致 -->
             <a-layout-sider
                 v-if="!isMobile"
                 v-model:collapsed="collapsed"
@@ -164,16 +183,11 @@
             >
                 <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
                 <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
-                    <a-menu-item key="overview">
-                        <a href="/" rel="noopener" style="display:block">🏠 首页</a>
-                    </a-menu-item>
-                    <a-menu-item key="setup">
-                        <a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a>
-                    </a-menu-item>
+                    <a-menu-item key="overview"><a href="/" rel="noopener" style="display:block">🏠 首页</a></a-menu-item>
+                    <a-menu-item key="setup"><a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a></a-menu-item>
                 </a-menu>
             </a-layout-sider>
 
-            <!-- 移动端抽屉导航（PC 不渲染） -->
             <a-drawer
                 v-if="isMobile"
                 v-model:open="drawerOpen"
@@ -183,25 +197,15 @@
                 :styles="{ body: { padding: 0, background: '#001529' } }"
             >
                 <div class="logo">OTMC 导航</div>
-                <a-menu
-                    theme="dark"
-                    mode="inline"
-                    :selected-keys="selectedKeys"
-                    @click="drawerOpen = false"
-                >
-                    <a-menu-item key="overview">
-                        <a href="/" rel="noopener" style="display:block">🏠 首页</a>
-                    </a-menu-item>
-                    <a-menu-item key="setup">
-                        <a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a>
-                    </a-menu-item>
+                <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys" @click="drawerOpen = false">
+                    <a-menu-item key="overview"><a href="/" rel="noopener" style="display:block">🏠 首页</a></a-menu-item>
+                    <a-menu-item key="setup"><a href="/setup" rel="noopener" style="display:block">⚙️ 设置</a></a-menu-item>
                 </a-menu>
             </a-drawer>
 
             <a-layout>
                 <a-layout-header class="site-header">
                     <div class="header-left">
-                        <!-- 顶部按钮：PC 切换侧栏折叠，手机打开抽屉 -->
                         <a-button type="text" @click="toggleMenu">
                             <span v-if="isMobile || collapsed">☰</span><span v-else>✕</span>
                         </a-button>
@@ -228,30 +232,104 @@
                                     <a-form-item label="Broker WebSocket URL">
                                         <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
                                     </a-form-item>
-                                    <a-row :gutter="12">
-                                        <a-col :xs="24" :sm="12">
-                                            <a-form-item label="Client ID">
-                                                <a-input v-model:value="connectForm.clientId"></a-input>
-                                            </a-form-item>
-                                        </a-col>
-                                        <a-col :xs="24" :sm="12">
-                                            <a-form-item label="订阅 Topic">
-                                                <a-input v-model:value="connectForm.subTopic"></a-input>
-                                            </a-form-item>
-                                        </a-col>
-                                    </a-row>
-                                    <a-row :gutter="12">
-                                        <a-col :xs="24" :sm="12">
-                                            <a-form-item label="Username（可选）">
-                                                <a-input v-model:value="connectForm.username"></a-input>
-                                            </a-form-item>
-                                        </a-col>
-                                        <a-col :xs="24" :sm="12">
-                                            <a-form-item label="Password（可选）">
-                                                <a-input-password v-model:value="connectForm.password"></a-input-password>
-                                            </a-form-item>
-                                        </a-col>
-                                    </a-row>
+
+                                    <!-- ===== 传输层：WebSocket（自动附带客户端证书认证） ===== -->
+                                    <div class="layer-block">
+                                        <div class="layer-title">
+                                            传输层 · WebSocket
+                                            <span class="badge">自动证书认证</span>
+                                        </div>
+
+                                        <a-form-item label="附加查询参数（可选，拼到 URL）">
+                                            <a-input
+                                                v-model:value="wsConfig.extraQuery"
+                                                placeholder="token=xxx&v=1"
+                                            ></a-input>
+                                        </a-form-item>
+
+                                        <a-form-item label="校验 TLS 证书（仅 Node 端生效，浏览器忽略）">
+                                            <a-switch v-model:checked="wsConfig.rejectUnauthorized" />
+                                        </a-form-item>
+
+                                        <!-- 证书链状态 -->
+                                        <div style="margin-bottom: 10px;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                <span style="font-size: 13px; font-weight: 500;">客户端证书链状态</span>
+                                                <a-button size="small" :loading="certStatus.loading" @click="refreshCertStatus">重新读取</a-button>
+                                            </div>
+                                            <ul class="cert-status-list">
+                                                <li class="cert-status-item">
+                                                    <span class="dot" :class="certStatus.leafReady ? 'ok' : 'bad'"></span>
+                                                    <span class="label">叶子证书 + 私钥</span>
+                                                    <span class="subject">{{ certStatus.leafSubject || '(未找到)' }}</span>
+                                                </li>
+                                                <li class="cert-status-item">
+                                                    <span class="dot" :class="certStatus.interReady ? 'ok' : 'bad'"></span>
+                                                    <span class="label">Space 2nd-Level CA</span>
+                                                    <span class="subject">{{ certStatus.interSubject || '(未找到)' }}</span>
+                                                </li>
+                                                <li class="cert-status-item">
+                                                    <span class="dot" :class="certStatus.topReady ? 'ok' : 'bad'"></span>
+                                                    <span class="label">Space 1st-Level CA</span>
+                                                    <span class="subject">{{ certStatus.topSubject || '(未找到)' }}</span>
+                                                </li>
+                                            </ul>
+                                        </div>
+
+                                        <div class="ws-preview">
+                                            <div v-if="certStatus.error" class="err-text">
+                                                ⚠️ {{ certStatus.error }}
+                                            </div>
+                                            <div v-else-if="lastTokenBytes > 0">
+                                                已附加 <b>auth.&lt;token&gt;</b> 子协议，长度约 <b>{{ lastTokenBytes }}</b> 字节。
+                                                <br />
+                                                <span class="muted">
+                                                    签名算法 <code>ECDSA P-384 / SHA-384</code>；
+                                                    证书链 DER 依次为 叶子 → 2 级 CA → 1 级 CA；
+                                                    每次连接都会用叶子私钥重新签名
+                                                    <code>{{ signPreviewPayload }}</code>。
+                                                </span>
+                                            </div>
+                                            <div v-else class="muted">
+                                                连接时将自动读取 3 张证书并用叶子私钥签名，附加到
+                                                <code>Sec-WebSocket-Protocol: mqtt, auth.&lt;base64url&gt;</code>。
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- ===== 协议层：MQTT ===== -->
+                                    <div class="layer-block">
+                                        <div class="layer-title">
+                                            协议层 · MQTT
+                                            <span class="badge">clientId / 凭据</span>
+                                        </div>
+
+                                        <a-row :gutter="12">
+                                            <a-col :xs="24" :sm="12">
+                                                <a-form-item label="Client ID">
+                                                    <a-input v-model:value="connectForm.clientId"></a-input>
+                                                </a-form-item>
+                                            </a-col>
+                                            <a-col :xs="24" :sm="12">
+                                                <a-form-item label="订阅 Topic">
+                                                    <a-input v-model:value="connectForm.subTopic"></a-input>
+                                                </a-form-item>
+                                            </a-col>
+                                        </a-row>
+                                        <a-row :gutter="12">
+                                            <a-col :xs="24" :sm="12">
+                                                <a-form-item label="Username（可选）">
+                                                    <a-input v-model:value="connectForm.username"></a-input>
+                                                </a-form-item>
+                                            </a-col>
+                                            <a-col :xs="24" :sm="12">
+                                                <a-form-item label="Password（可选）">
+                                                    <a-input-password v-model:value="connectForm.password"></a-input-password>
+                                                </a-form-item>
+                                            </a-col>
+                                        </a-row>
+                                    </div>
+
                                 </a-form>
                                 <a-alert
                                     type="warning"
@@ -279,7 +357,6 @@
                         </a-col>
                     </a-row>
 
-                    <!-- 统计卡：PC 保持 xl=6 四列，与原版一致 -->
                     <a-row :gutter="[16, 16]" style="margin-top:16px;">
                         <a-col :xs="12" :sm="12" :xl="6">
                             <a-card class="stat-card" variant="borderless">
@@ -331,15 +408,12 @@
                                         <a-textarea v-model:value="pubMessage" :rows="3"></a-textarea>
                                     </a-form-item>
                                 </a-form>
-                                <a-button type="primary" block @click="publishMessage" :disabled="!connected">
-                                    发布消息
-                                </a-button>
+                                <a-button type="primary" block @click="publishMessage" :disabled="!connected">发布消息</a-button>
                             </a-card>
                         </a-col>
 
                         <a-col :xs="24" :xl="16">
                             <a-card variant="borderless" title="设备状态（来自 MQTT 消息）">
-                                <!-- 移动端：卡片列表 -->
                                 <div v-if="isMobile" class="device-cards">
                                     <div v-for="d in devices" :key="d.key" class="device-card">
                                         <div class="device-card-head">
@@ -355,12 +429,8 @@
                                         </div>
                                         <div class="device-card-foot">{{ d.type }} · {{ d.lastSeen }}</div>
                                     </div>
-                                    <div v-if="devices.length === 0" class="empty-tip">
-                                        暂无设备数据，等待 MQTT 消息…
-                                    </div>
+                                    <div v-if="devices.length === 0" class="empty-tip">暂无设备数据，等待 MQTT 消息…</div>
                                 </div>
-
-                                <!-- PC：表格（与原版完全一致） -->
                                 <a-table
                                     v-else
                                     :columns="columns"
@@ -387,9 +457,7 @@
                                         </div>
                                         <span class="meta">{{ item.device }} · {{ item.time }}</span>
                                     </li>
-                                    <li v-if="alerts.length === 0" class="alert-item" style="color:#8c8c8c;">
-                                        暂无告警
-                                    </li>
+                                    <li v-if="alerts.length === 0" class="alert-item" style="color:#8c8c8c;">暂无告警</li>
                                 </ul>
                             </a-card>
                         </a-col>
@@ -399,10 +467,8 @@
         </a-layout>
     </div>
 
-    <!-- 环境变量：antdv-next 的 UMD 构建需要 -->
     <script>window.process = { env: { NODE_ENV: 'production' } };</script>
 
-    <!-- 1. Day.js UMD 及插件（版本与 OTMC 页面一致：1.11.23） -->
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/dayjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/customParseFormat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekday.js"></script>
@@ -421,42 +487,241 @@
         dayjs.extend(dayjs_plugin_quarterOfYear);
     </script>
 
-    <!-- 2. Vue 3 全局构建（版本与 OTMC 页面一致：3.5.44） -->
     <script src="https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.global.prod.js"></script>
 
-    <!-- 3. IoT Dashboard 专属依赖 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.5/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js"></script>
 
-    <!-- 4. antdv-next UMD（与 OTMC 页面一致） -->
     <script src="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.js"></script>
 
-    <!-- 5. 业务脚本 -->
     <script>
-        const { createApp, ref, reactive, onMounted, onBeforeUnmount, h, nextTick } = Vue;
+        const { createApp, ref, reactive, computed, onMounted, onBeforeUnmount, h, nextTick } = Vue;
+
+        /* =========================================================
+         * IndexedDB（与「密钥与 CSR 生成器」页面共享同一库）
+         * ========================================================= */
+        const DB_NAME = 'omtc-mtls-keystore';
+        const STORE_NAME = 'browser_leader_cert_and_keys';
+        const CERT_KEYS = {
+            top:   'client-space-top',
+            inter: 'client-space-inter',
+            leaf:  'client-space-leaf',
+        };
+
+        let dbPromise = null;
+        function openDb() {
+            if (dbPromise) return dbPromise;
+            dbPromise = new Promise((resolve, reject) => {
+                let req;
+                try { req = indexedDB.open(DB_NAME); }
+                catch (e) { return reject(e); }
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror  = () => reject(req.error || new Error('IndexedDB 打开失败'));
+                req.onblocked = () => reject(new Error('IndexedDB 打开被其他标签页阻塞'));
+            });
+            dbPromise.catch(() => { dbPromise = null; });
+            return dbPromise;
+        }
+
+        async function dbGet(key) {
+            const db = await openDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror   = () => reject(req.error);
+            });
+        }
+
+        /* =========================================================
+         * 编码工具
+         * ========================================================= */
+        function pemToDerBytes(pem) {
+            const b64 = String(pem)
+                .replace(/-----BEGIN [^-]+-----/g, '')
+                .replace(/-----END [^-]+-----/g, '')
+                .replace(/\s+/g, '');
+            const bin = atob(b64);
+            const out = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+            return out;
+        }
+
+        function bytesToBase64url(bytes) {
+            let binary = '';
+            const CHUNK = 0x8000;
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            }
+            return btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+        }
+
+        /* 从 PEM 证书里快速提取 Subject 字符串（纯展示用） */
+        function quickSubjectFromPem(pem) {
+            try {
+                const bin = atob(pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''));
+                const buf = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+                // 简易 DER 遍历，定位 subject
+                function readTLV(b, o) {
+                    const start = o;
+                    const tag = b[o++];
+                    let len = b[o++];
+                    if (len & 0x80) {
+                        const n = len & 0x7f; len = 0;
+                        for (let i = 0; i < n; i++) len = (len << 8) | b[o++];
+                    }
+                    return { tag, valueStart: o, valueEnd: o + len, rawStart: start, rawEnd: o + len };
+                }
+                const cert = readTLV(buf, 0);
+                const tbs  = readTLV(buf, cert.valueStart);
+                let off = tbs.valueStart;
+                if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd;   // version
+                off = readTLV(buf, off).rawEnd;                          // serial
+                off = readTLV(buf, off).rawEnd;                          // sig alg
+                off = readTLV(buf, off).rawEnd;                          // issuer
+                off = readTLV(buf, off).rawEnd;                          // validity
+                const subject = readTLV(buf, off);
+                // 遍历 RDNSequence
+                const OID_SHORT = { '2.5.4.3':'CN','2.5.4.6':'C','2.5.4.7':'L','2.5.4.8':'ST','2.5.4.10':'O','2.5.4.11':'OU' };
+                function decodeOid(b, tlv) {
+                    const bytes = b.subarray(tlv.valueStart, tlv.valueEnd);
+                    const parts = []; let v = 0;
+                    for (let i = 0; i < bytes.length; i++) {
+                        v = (v << 7) | (bytes[i] & 0x7f);
+                        if (!(bytes[i] & 0x80)) { parts.push(v); v = 0; }
+                    }
+                    if (parts.length) {
+                        const first = parts[0];
+                        const a = first < 40 ? 0 : first < 80 ? 1 : 2;
+                        parts[0] = a; parts.splice(1, 0, first - a * 40);
+                    }
+                    return parts.join('.');
+                }
+                function decodeString(tag, bytes) {
+                    if (tag === 0x1e) {
+                        let s = '';
+                        for (let i = 0; i + 1 < bytes.length; i += 2) s += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+                        return s;
+                    }
+                    return new TextDecoder().decode(bytes);
+                }
+                const attrs = [];
+                let o = subject.valueStart;
+                while (o < subject.valueEnd) {
+                    const rdn = readTLV(buf, o);
+                    let ao = rdn.valueStart;
+                    while (ao < rdn.valueEnd) {
+                        const atv = readTLV(buf, ao);
+                        const oidTlv = readTLV(buf, atv.valueStart);
+                        const valTlv = readTLV(buf, oidTlv.rawEnd);
+                        attrs.push({
+                            oid: decodeOid(buf, oidTlv),
+                            value: decodeString(valTlv.tag, buf.subarray(valTlv.valueStart, valTlv.valueEnd)),
+                        });
+                        ao = atv.rawEnd;
+                    }
+                    o = rdn.rawEnd;
+                }
+                return attrs.map(a => `${OID_SHORT[a.oid] || a.oid}=${a.value}`).join(', ');
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /* =========================================================
+         * 组装认证令牌：证书链 + 数字签名 → base64url
+         * ========================================================= */
+        async function buildAuthToken(clientId) {
+            if (!window.crypto || !window.crypto.subtle) {
+                throw new Error('当前环境不支持 Web Crypto API（需要 HTTPS 或 localhost）');
+            }
+
+            let leaf, inter, top;
+            try {
+                leaf  = await dbGet(CERT_KEYS.leaf);
+                inter = await dbGet(CERT_KEYS.inter);
+                top   = await dbGet(CERT_KEYS.top);
+            } catch (e) {
+                throw new Error('读取 IndexedDB 失败：' + (e && e.message ? e.message : e));
+            }
+
+            if (!leaf || !leaf.privateKey) {
+                throw new Error('未找到叶子证书私钥。请先在「密钥与 CSR 生成器」页面生成并保存叶子证书');
+            }
+            if (!leaf.certPem) {
+                throw new Error('叶子证书尚未签发。请先在证书页面完成「用本机 2 级密钥签发证书」');
+            }
+
+            const warnings = [];
+            if (!inter || !inter.certPem) warnings.push('缺少 2 级 CA 证书');
+            if (!top   || !top.certPem)   warnings.push('缺少 1 级 CA 证书');
+
+            // 待签名数据：clientId|timestamp（防重放）
+            const ts = Date.now();
+            const payload = `${clientId}|${ts}`;
+            const payloadBytes = new TextEncoder().encode(payload);
+
+            // 用叶子私钥签名：ECDSA P-384 / SHA-384，返回 raw (r||s) 96 字节
+            const sigRaw = new Uint8Array(
+                await crypto.subtle.sign(
+                    { name: 'ECDSA', hash: 'SHA-384' },
+                    leaf.privateKey,
+                    payloadBytes
+                )
+            );
+
+            // 证书链：叶子 → 2 级 CA → 1 级 CA，全部转 DER 再 base64url
+            const chain = [pemToDerBytes(leaf.certPem)];
+            if (inter && inter.certPem) chain.push(pemToDerBytes(inter.certPem));
+            if (top   && top.certPem)   chain.push(pemToDerBytes(top.certPem));
+
+            const token = {
+                v: 1,
+                alg: 'ECDSA-P384-SHA384',
+                ts,
+                cid: clientId,
+                payload,
+                sig: bytesToBase64url(sigRaw),
+                chain: chain.map(bytesToBase64url),
+            };
+
+            const tokenJson = new TextEncoder().encode(JSON.stringify(token));
+            const tokenB64u = bytesToBase64url(tokenJson);
+
+            return {
+                tokenB64u,
+                payload,
+                chainLength: chain.length,
+                warnings,
+                tokenBytes: tokenB64u.length,
+                leafSubject: quickSubjectFromPem(leaf.certPem),
+            };
+        }
 
         const app = createApp({
             setup() {
-                /* ===== 响应式断点（仅手机触发，PC 分支走原版逻辑） ===== */
                 const mqMobile = window.matchMedia('(max-width: 768px)');
                 const isMobile = ref(mqMobile.matches);
 
-                /* ===== 导航状态 ===== */
                 const collapsed = ref(false);
                 const drawerOpen = ref(false);
                 const selectedKeys = ref(['overview']);
 
                 const toggleMenu = () => {
-                    if (isMobile.value) {
-                        drawerOpen.value = !drawerOpen.value;
-                    } else {
-                        collapsed.value = !collapsed.value; // PC 与原版一致
-                    }
+                    if (isMobile.value) drawerOpen.value = !drawerOpen.value;
+                    else collapsed.value = !collapsed.value;
                 };
 
-                /* ===== MQTT 连接表单 ===== */
                 const connectForm = reactive({
-                    url: 'ws://broker.emqx.io:8083/mqtt',
+                    url: 'wss://mqtt-browser.wator.xyz:8084/mqtt',
                     clientId: 'iot_dash_' + Math.random().toString(16).slice(2, 10),
                     username: '',
                     password: '',
@@ -464,18 +729,124 @@
                     pubTopic: 'iot/demo/sensor/control',
                 });
 
+                /* 传输层剩余可调项：附加查询参数 + TLS 校验开关（Node 端） */
+                const wsConfig = reactive({
+                    extraQuery: '',
+                    rejectUnauthorized: true,
+                });
+
+                /* 证书链状态 */
+                const certStatus = reactive({
+                    loading: false,
+                    leafReady: false,
+                    interReady: false,
+                    topReady: false,
+                    leafSubject: '',
+                    interSubject: '',
+                    topSubject: '',
+                    error: '',
+                });
+
+                const lastTokenBytes = ref(0);
+                const signPreviewPayload = ref('');
+
+                const refreshCertStatus = async () => {
+                    certStatus.loading = true;
+                    certStatus.error = '';
+                    try {
+                        const [leaf, inter, top] = await Promise.all([
+                            dbGet(CERT_KEYS.leaf).catch(() => null),
+                            dbGet(CERT_KEYS.inter).catch(() => null),
+                            dbGet(CERT_KEYS.top).catch(() => null),
+                        ]);
+                        certStatus.leafReady  = !!(leaf && leaf.privateKey && leaf.certPem);
+                        certStatus.interReady = !!(inter && inter.certPem);
+                        certStatus.topReady   = !!(top && top.certPem);
+                        certStatus.leafSubject  = leaf  && leaf.certPem  ? (quickSubjectFromPem(leaf.certPem)  || '(证书已存在)') : '';
+                        certStatus.interSubject = inter && inter.certPem ? (quickSubjectFromPem(inter.certPem) || '(证书已存在)') : '';
+                        certStatus.topSubject   = top   && top.certPem   ? (quickSubjectFromPem(top.certPem)   || '(证书已存在)') : '';
+
+                        if (!certStatus.leafReady) {
+                            certStatus.error = '叶子证书/私钥未就绪，无法生成认证令牌。请先在「密钥与 CSR 生成器」页面完成叶子证书的生成与签发。';
+                        } else if (!certStatus.interReady || !certStatus.topReady) {
+                            certStatus.error = '证书链不完整，后端验证时可能失败。建议先在证书页面补齐 2 级/1 级 CA 证书。';
+                        }
+                    } catch (e) {
+                        certStatus.error = 'IndexedDB 读取失败：' + (e && e.message ? e.message : e);
+                    } finally {
+                        certStatus.loading = false;
+                    }
+                };
+
+                /* =========================================================
+                 * 传输层：WebSocket 端点与选项
+                 * ========================================================= */
+                const buildWsEndpoint = () => {
+                    let url = String(connectForm.url || '').trim();
+                    url = url.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+                    const extra = String(wsConfig.extraQuery || '').replace(/^\?/, '');
+                    if (extra) {
+                        const sep = url.includes('?') ? '&' : '?';
+                        url = `${url}${sep}${extra}`;
+                    }
+                    return { url, secure: /^wss:\/\//i.test(url) };
+                };
+
+                /* =========================================================
+                 * 传输层：WebSocket 选项（含自动证书认证）
+                 *   protocols 为 ['mqtt', 'auth.<base64url>']
+                 *   浏览器据此生成请求头 Sec-WebSocket-Protocol: mqtt, auth.xxx
+                 * ========================================================= */
+                const buildWsOptions = async () => {
+                    const wsOptions = {};
+                    const protocols = ['mqtt'];
+
+                    try {
+                        const auth = await buildAuthToken(connectForm.clientId);
+                        protocols.push('auth.' + auth.tokenB64u);
+                        lastTokenBytes.value = auth.tokenBytes;
+                        signPreviewPayload.value = auth.payload;
+
+                        addLog('info', `已用叶子私钥签名并附加证书链（${auth.chainLength} 张，约 ${auth.tokenBytes} 字节）`);
+                        addLog('info', `签名载荷: ${auth.payload}`);
+                        if (auth.warnings.length) {
+                            addLog('err', `证书链不完整：${auth.warnings.join('；')}`);
+                        }
+                    } catch (e) {
+                        lastTokenBytes.value = 0;
+                        signPreviewPayload.value = '';
+                        addLog('err', `认证令牌生成失败：${e && e.message ? e.message : e}`);
+                        addLog('err', '本次连接将退化为匿名（仅 mqtt 子协议），后端若要求认证会被拒绝');
+                    }
+
+                    wsOptions.protocols = protocols;
+
+                    if (wsConfig.rejectUnauthorized === false) wsOptions.rejectUnauthorized = false;
+
+                    return { wsOptions };
+                };
+
+                /* =========================================================
+                 * 协议层：MQTT 选项
+                 * ========================================================= */
+                const buildMqttOptions = () => {
+                    const options = {
+                        clean: true,
+                        connectTimeout: 8000,
+                        reconnectPeriod: 4000,
+                        clientId: connectForm.clientId,
+                    };
+                    if (connectForm.username) options.username = connectForm.username;
+                    if (connectForm.password) options.password = connectForm.password;
+                    return options;
+                };
+
                 const connected = ref(false);
                 const connecting = ref(false);
                 let mqttClient = null;
 
                 const logs = reactive([]);
-
-                const summary = reactive({
-                    online: 0,
-                    offline: 0,
-                    alerts: 0,
-                    throughput: 0,
-                });
+                const summary = reactive({ online: 0, offline: 0, alerts: 0, throughput: 0 });
 
                 const timeLabels = ref([]);
                 const tempData = ref([]);
@@ -501,7 +872,6 @@
                 let lineChart = null;
                 let donutChart = null;
 
-                /* ===== 折线图：PC 参数与原版完全一致；手机分支才收缩 ===== */
                 const lineOption = () => {
                     const mobile = isMobile.value;
                     return {
@@ -513,9 +883,7 @@
                             ? { left: 40, right: 44, top: 44, bottom: 26 }
                             : { left: 46, right: 52, top: 44, bottom: 30 },
                         xAxis: {
-                            type: 'category',
-                            boundaryGap: false,
-                            data: timeLabels.value,
+                            type: 'category', boundaryGap: false, data: timeLabels.value,
                             axisLabel: mobile
                                 ? { fontSize: 10, color: '#8c8c8c', hideOverlap: true }
                                 : { fontSize: 11, color: '#8c8c8c' },
@@ -548,7 +916,6 @@
                     };
                 };
 
-                /* ===== 环形图：PC 参数与原版完全一致 ===== */
                 const donutOption = () => {
                     const total = summary.online + summary.offline;
                     const rate = total ? ((summary.online / total) * 100).toFixed(1) : '0.0';
@@ -556,20 +923,15 @@
                         tooltip: { trigger: 'item', formatter: '{b}: {c} 台 ({d}%)', confine: true },
                         legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },
                         title: {
-                            text: rate + '%',
-                            subtext: '在线率',
-                            left: 'center',
+                            text: rate + '%', subtext: '在线率', left: 'center',
                             top: isMobile.value ? '32%' : '34%',
                             textStyle: { fontSize: isMobile.value ? 22 : 26, fontWeight: 600, color: '#1f1f1f' },
                             subtextStyle: { fontSize: 12, color: '#8c8c8c' },
                         },
                         series: [{
-                            type: 'pie',
-                            radius: ['58%', '78%'],
-                            center: ['50%', '44%'],
+                            type: 'pie', radius: ['58%', '78%'], center: ['50%', '44%'],
                             avoidLabelOverlap: false,
-                            label: { show: false },
-                            labelLine: { show: false },
+                            label: { show: false }, labelLine: { show: false },
                             data: [
                                 { value: summary.online || 1,  name: '在线', itemStyle: { color: '#52c41a' } },
                                 { value: summary.offline, name: '离线', itemStyle: { color: '#ff4d4f' } },
@@ -578,7 +940,6 @@
                     };
                 };
 
-                /* ===== 图表尺寸自适应（rAF 防抖） ===== */
                 let rafId = null;
                 const handleResize = () => {
                     if (rafId) return;
@@ -589,7 +950,6 @@
                     });
                 };
 
-                /* ===== 断点切换：重建 option（PC/手机参数不同） ===== */
                 const onMediaChange = (e) => {
                     isMobile.value = e.matches;
                     if (!e.matches) drawerOpen.value = false;
@@ -600,43 +960,50 @@
                     });
                 };
 
-                const connectMQTT = () => {
+                /* =========================================================
+                 * 连接：传输层（含证书 + 签名）→ 协议层（MQTT）
+                 * ========================================================= */
+                const connectMQTT = async () => {
                     if (mqttClient) {
                         try { mqttClient.end(true); } catch (e) {}
                         mqttClient = null;
                     }
 
                     connecting.value = true;
-                    addLog('info', `正在连接 ${connectForm.url} …`);
 
-                    const options = {
-                        clean: true,
-                        connectTimeout: 8000,
-                        reconnectPeriod: 4000,
-                        clientId: connectForm.clientId,
-                    };
-                    if (connectForm.username) options.username = connectForm.username;
-                    if (connectForm.password) options.password = connectForm.password;
+                    const { url: wsUrl, secure } = buildWsEndpoint();
+                    const { wsOptions } = await buildWsOptions();
+                    const mqttPart = buildMqttOptions();
 
-                    mqttClient = mqtt.connect(connectForm.url, options);
+                    const options = { ...mqttPart, wsOptions };
+
+                    addLog('info', `正在连接 ${secure ? 'WSS' : 'WS'} 端点 ${wsUrl} …`);
+                    addLog('info', `Sec-WebSocket-Protocol → ${wsOptions.protocols.map(p => p.length > 40 ? p.slice(0, 20) + '…' + p.slice(-8) : p).join(', ')}`);
+
+                    mqttClient = mqtt.connect(wsUrl, options);
 
                     mqttClient.on('connect', () => {
                         connected.value = true;
                         connecting.value = false;
-                        addLog('info', 'MQTT 连接成功');
+
+                        let negotiated = '';
+                        try {
+                            const stream = mqttClient && mqttClient.stream;
+                            if (stream && stream.protocol) negotiated = stream.protocol;
+                        } catch (e) { /* ignore */ }
+
+                        addLog('info', `MQTT 连接成功（${secure ? 'WSS' : 'WS'}）`
+                            + (negotiated ? `，协商子协议: ${negotiated}` : ''));
 
                         mqttClient.subscribe(connectForm.subTopic, { qos: 0 }, (err) => {
-                            if (err) {
-                                addLog('err', `订阅失败: ${err.message}`);
-                            } else {
-                                addLog('info', `已订阅 Topic: ${connectForm.subTopic}`);
-                            }
+                            if (err) addLog('err', `订阅失败: ${err.message}`);
+                            else addLog('info', `已订阅 Topic: ${connectForm.subTopic}`);
                         });
                     });
 
                     mqttClient.on('reconnect', () => {
                         connecting.value = true;
-                        addLog('info', '正在重连 …');
+                        addLog('info', '正在重连 …（沿用首次连接时的签名与证书链）');
                     });
 
                     mqttClient.on('close', () => {
@@ -652,28 +1019,18 @@
 
                     mqttClient.on('message', (topic, payload) => {
                         let text;
-                        try {
-                            text = payload.toString();
-                        } catch (e) {
-                            text = '[无法解析的 payload]';
-                        }
-
+                        try { text = payload.toString(); }
+                        catch (e) { text = '[无法解析的 payload]'; }
                         addLog('recv', `[${topic}] ${text}`);
-
                         try {
                             const data = JSON.parse(text);
                             handleSensorData(topic, data);
-                        } catch (e) {
-                            // 非 JSON 消息只记录
-                        }
+                        } catch (e) { /* 非 JSON */ }
                     });
                 };
 
                 const disconnectMQTT = () => {
-                    if (mqttClient) {
-                        mqttClient.end(true);
-                        mqttClient = null;
-                    }
+                    if (mqttClient) { mqttClient.end(true); mqttClient = null; }
                     connected.value = false;
                     connecting.value = false;
                     addLog('info', '已主动断开连接');
@@ -681,7 +1038,6 @@
 
                 const handleSensorData = (topic, data) => {
                     const now = dayjs().format('HH:mm:ss');
-
                     const temp = data.temperature ?? data.temp ?? data.t;
                     const hum  = data.humidity ?? data.hum ?? data.h;
 
@@ -695,14 +1051,12 @@
                             tempData.value.shift();
                             humData.value.shift();
                         }
-
                         if (lineChart) {
                             lineChart.setOption({
                                 xAxis: { data: timeLabels.value },
                                 series: [{ data: tempData.value }, { data: humData.value }],
                             });
                         }
-
                         summary.throughput = Math.floor(Math.random() * 50) + 50;
                     }
 
@@ -716,8 +1070,7 @@
                             existing.status = data.status || existing.status;
                         } else {
                             devices.push({
-                                key: id,
-                                id,
+                                key: id, id,
                                 type: data.type || '传感器',
                                 location: data.location || '—',
                                 status: data.status || 'online',
@@ -757,17 +1110,14 @@
                     }
                     const topic = connectForm.pubTopic;
                     mqttClient.publish(topic, pubMessage.value, { qos: 0 }, (err) => {
-                        if (err) {
-                            addLog('err', `发布失败: ${err.message}`);
-                        } else {
-                            addLog('send', `[${topic}] ${pubMessage.value}`);
-                        }
+                        if (err) addLog('err', `发布失败: ${err.message}`);
+                        else addLog('send', `[${topic}] ${pubMessage.value}`);
                     });
                 };
 
                 let resizeObserver = null;
 
-                onMounted(() => {
+                onMounted(async () => {
                     lineChart = echarts.init(lineRef.value);
                     lineChart.setOption(lineOption());
 
@@ -777,11 +1127,8 @@
                     window.addEventListener('resize', handleResize);
                     window.addEventListener('orientationchange', handleResize);
 
-                    if (mqMobile.addEventListener) {
-                        mqMobile.addEventListener('change', onMediaChange);
-                    } else if (mqMobile.addListener) {
-                        mqMobile.addListener(onMediaChange);
-                    }
+                    if (mqMobile.addEventListener) mqMobile.addEventListener('change', onMediaChange);
+                    else if (mqMobile.addListener) mqMobile.addListener(onMediaChange);
 
                     if (window.ResizeObserver) {
                         resizeObserver = new ResizeObserver(() => handleResize());
@@ -789,34 +1136,25 @@
                         if (donutRef.value) resizeObserver.observe(donutRef.value);
                     }
 
-                    connectMQTT();
+                    await refreshCertStatus();
+                    await connectMQTT();
                 });
 
                 onBeforeUnmount(() => {
                     window.removeEventListener('resize', handleResize);
                     window.removeEventListener('orientationchange', handleResize);
 
-                    if (mqMobile.removeEventListener) {
-                        mqMobile.removeEventListener('change', onMediaChange);
-                    } else if (mqMobile.removeListener) {
-                        mqMobile.removeListener(onMediaChange);
-                    }
+                    if (mqMobile.removeEventListener) mqMobile.removeEventListener('change', onMediaChange);
+                    else if (mqMobile.removeListener) mqMobile.removeListener(onMediaChange);
 
-                    if (resizeObserver) {
-                        resizeObserver.disconnect();
-                        resizeObserver = null;
-                    }
-                    if (rafId) {
-                        cancelAnimationFrame(rafId);
-                        rafId = null;
-                    }
+                    if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 
                     if (lineChart) lineChart.dispose();
                     if (donutChart) donutChart.dispose();
                     if (mqttClient) mqttClient.end(true);
                 });
 
-                // antdv-next 中 Table 的 customRender 已更名为 render
                 const columns = [
                     { title: '设备 ID', dataIndex: 'id', key: 'id', width: 110 },
                     { title: '类型', dataIndex: 'type', key: 'type' },
@@ -828,24 +1166,25 @@
                     },
                     {
                         title: '温度', key: 'temp', width: 90,
-                        render: ({ record }) =>
-                            record.temp !== null
-                                ? `${record.temp} °C`
-                                : h('span', { style: 'color:#bfbfbf;' }, '—'),
+                        render: ({ record }) => record.temp !== null
+                            ? `${record.temp} °C`
+                            : h('span', { style: 'color:#bfbfbf;' }, '—'),
                     },
                     {
                         title: '湿度', key: 'hum', width: 90,
-                        render: ({ record }) =>
-                            record.hum !== null
-                                ? `${record.hum} %`
-                                : h('span', { style: 'color:#bfbfbf;' }, '—'),
+                        render: ({ record }) => record.hum !== null
+                            ? `${record.hum} %`
+                            : h('span', { style: 'color:#bfbfbf;' }, '—'),
                     },
                     { title: '最后心跳', dataIndex: 'lastSeen', key: 'lastSeen', width: 110 },
                 ];
 
                 return {
                     collapsed, drawerOpen, selectedKeys, toggleMenu, isMobile,
-                    connectForm, connected, connecting,
+                    connectForm, wsConfig,
+                    certStatus, refreshCertStatus,
+                    lastTokenBytes, signPreviewPayload,
+                    connected, connecting,
                     logs, summary, devices, alerts, columns,
                     pubMessage, lineRef, donutRef,
                     statusColor, statusText, levelColor, levelText,
