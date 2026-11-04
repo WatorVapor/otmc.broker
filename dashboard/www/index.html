@@ -84,7 +84,6 @@
         .device-card-foot { margin-top: 6px; font-size: 12px; color: #8c8c8c; }
         .empty-tip { text-align: center; color: #8c8c8c; font-size: 13px; padding: 18px 0; }
 
-        /* ===== 传输层 / 协议层 分区样式 ===== */
         .layer-block {
             border: 1px dashed #e0e0e0;
             border-radius: 8px;
@@ -115,7 +114,6 @@
         .ws-preview .muted { color: #8c8c8c; }
         .ws-preview .err-text { color: #cf1322; }
 
-        /* 证书链状态 */
         .cert-status-list { list-style: none; margin: 0; padding: 0; }
         .cert-status-item {
             display: flex; align-items: center; gap: 8px;
@@ -133,6 +131,12 @@
         .cert-status-item .subject {
             flex: 1; color: #595959; font-family: 'Consolas', monospace;
             font-size: 12px; word-break: break-all;
+        }
+        .store-badge {
+            font-size: 10px !important;
+            line-height: 16px !important;
+            padding: 0 6px !important;
+            margin: 0 !important;
         }
 
         @media (max-width: 768px) {
@@ -233,7 +237,6 @@
                                         <a-input v-model:value="connectForm.url" placeholder="ws://broker.emqx.io:8083/mqtt"></a-input>
                                     </a-form-item>
 
-                                    <!-- ===== 传输层：WebSocket（自动附带客户端证书认证） ===== -->
                                     <div class="layer-block">
                                         <div class="layer-title">
                                             传输层 · WebSocket
@@ -251,7 +254,6 @@
                                             <a-switch v-model:checked="wsConfig.rejectUnauthorized" />
                                         </a-form-item>
 
-                                        <!-- 证书链状态 -->
                                         <div style="margin-bottom: 10px;">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                                 <span style="font-size: 13px; font-weight: 500;">客户端证书链状态</span>
@@ -261,16 +263,31 @@
                                                 <li class="cert-status-item">
                                                     <span class="dot" :class="certStatus.leafReady ? 'ok' : 'bad'"></span>
                                                     <span class="label">叶子证书 + 私钥</span>
+                                                    <a-tag
+                                                        v-if="certStatus.leafSource"
+                                                        :color="sourceColor(certStatus.leafSource)"
+                                                        class="store-badge"
+                                                    >{{ sourceLabel(certStatus.leafSource) }}</a-tag>
                                                     <span class="subject">{{ certStatus.leafSubject || '(未找到)' }}</span>
                                                 </li>
                                                 <li class="cert-status-item">
                                                     <span class="dot" :class="certStatus.interReady ? 'ok' : 'bad'"></span>
                                                     <span class="label">Space 2nd-Level CA</span>
+                                                    <a-tag
+                                                        v-if="certStatus.interSource"
+                                                        :color="sourceColor(certStatus.interSource)"
+                                                        class="store-badge"
+                                                    >{{ sourceLabel(certStatus.interSource) }}</a-tag>
                                                     <span class="subject">{{ certStatus.interSubject || '(未找到)' }}</span>
                                                 </li>
                                                 <li class="cert-status-item">
                                                     <span class="dot" :class="certStatus.topReady ? 'ok' : 'bad'"></span>
                                                     <span class="label">Space 1st-Level CA</span>
+                                                    <a-tag
+                                                        v-if="certStatus.topSource"
+                                                        :color="sourceColor(certStatus.topSource)"
+                                                        class="store-badge"
+                                                    >{{ sourceLabel(certStatus.topSource) }}</a-tag>
                                                     <span class="subject">{{ certStatus.topSubject || '(未找到)' }}</span>
                                                 </li>
                                             </ul>
@@ -291,13 +308,13 @@
                                                 </span>
                                             </div>
                                             <div v-else class="muted">
-                                                连接时将自动读取 3 张证书并用叶子私钥签名，附加到
+                                                连接时将自动读取 3 张证书（优先 leader，缺失时回退 follower）
+                                                并用叶子私钥签名，附加到
                                                 <code>Sec-WebSocket-Protocol: mqtt, auth.&lt;base64url&gt;</code>。
                                             </div>
                                         </div>
                                     </div>
 
-                                    <!-- ===== 协议层：MQTT ===== -->
                                     <div class="layer-block">
                                         <div class="layer-title">
                                             协议层 · MQTT
@@ -498,10 +515,16 @@
         const { createApp, ref, reactive, computed, onMounted, onBeforeUnmount, h, nextTick } = Vue;
 
         /* =========================================================
-         * IndexedDB（与「密钥与 CSR 生成器」页面共享同一库）
+         * IndexedDB：leader 优先，缺失时回退 follower
          * ========================================================= */
         const DB_NAME = 'omtc-mtls-keystore';
-        const STORE_NAME = 'browser_leader_cert_and_keys';
+
+        // 按优先级排列：先查 leader，再查 follower
+        const STORE_NAMES = [
+            'browser_leader_cert_and_keys',
+            'browser_follower_cert_and_keys',
+        ];
+
         const CERT_KEYS = {
             top:   'client-space-top',
             inter: 'client-space-inter',
@@ -516,8 +539,11 @@
                 try { req = indexedDB.open(DB_NAME); }
                 catch (e) { return reject(e); }
                 req.onupgradeneeded = () => {
+                    // 数据库新建/升级时，把所有共享 store 都补齐
                     const db = req.result;
-                    if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+                    STORE_NAMES.forEach((name) => {
+                        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+                    });
                 };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror  = () => reject(req.error || new Error('IndexedDB 打开失败'));
@@ -527,14 +553,34 @@
             return dbPromise;
         }
 
-        async function dbGet(key) {
+        /* 从指定 store 读取（store 不存在时返回 null，不抛异常） */
+        async function dbGetFromStore(storeName, key) {
             const db = await openDb();
+            if (!db.objectStoreNames.contains(storeName)) return null;
             return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readonly');
-                const req = tx.objectStore(STORE_NAME).get(key);
-                req.onsuccess = () => resolve(req.result);
-                req.onerror   = () => reject(req.error);
+                try {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const req = tx.objectStore(storeName).get(key);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror   = () => reject(req.error);
+                } catch (e) {
+                    reject(e);
+                }
             });
+        }
+
+        /* 依次尝试 STORE_NAMES，返回第一个命中的记录 + 来源 store */
+        async function dbGetWithFallback(key) {
+            const errors = [];
+            for (const storeName of STORE_NAMES) {
+                try {
+                    const rec = await dbGetFromStore(storeName, key);
+                    if (rec) return { record: rec, storeName, errors };
+                } catch (e) {
+                    errors.push(`${storeName}: ${e && e.message ? e.message : e}`);
+                }
+            }
+            return { record: null, storeName: null, errors };
         }
 
         /* =========================================================
@@ -563,13 +609,11 @@
                 .replace(/=+$/, '');
         }
 
-        /* 从 PEM 证书里快速提取 Subject 字符串（纯展示用） */
         function quickSubjectFromPem(pem) {
             try {
                 const bin = atob(pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''));
                 const buf = new Uint8Array(bin.length);
                 for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-                // 简易 DER 遍历，定位 subject
                 function readTLV(b, o) {
                     const start = o;
                     const tag = b[o++];
@@ -583,13 +627,12 @@
                 const cert = readTLV(buf, 0);
                 const tbs  = readTLV(buf, cert.valueStart);
                 let off = tbs.valueStart;
-                if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd;   // version
-                off = readTLV(buf, off).rawEnd;                          // serial
-                off = readTLV(buf, off).rawEnd;                          // sig alg
-                off = readTLV(buf, off).rawEnd;                          // issuer
-                off = readTLV(buf, off).rawEnd;                          // validity
+                if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd;
+                off = readTLV(buf, off).rawEnd;
+                off = readTLV(buf, off).rawEnd;
+                off = readTLV(buf, off).rawEnd;
+                off = readTLV(buf, off).rawEnd;
                 const subject = readTLV(buf, off);
-                // 遍历 RDNSequence
                 const OID_SHORT = { '2.5.4.3':'CN','2.5.4.6':'C','2.5.4.7':'L','2.5.4.8':'ST','2.5.4.10':'O','2.5.4.11':'OU' };
                 function decodeOid(b, tlv) {
                     const bytes = b.subarray(tlv.valueStart, tlv.valueEnd);
@@ -644,14 +687,15 @@
                 throw new Error('当前环境不支持 Web Crypto API（需要 HTTPS 或 localhost）');
             }
 
-            let leaf, inter, top;
-            try {
-                leaf  = await dbGet(CERT_KEYS.leaf);
-                inter = await dbGet(CERT_KEYS.inter);
-                top   = await dbGet(CERT_KEYS.top);
-            } catch (e) {
-                throw new Error('读取 IndexedDB 失败：' + (e && e.message ? e.message : e));
-            }
+            const [leafRes, interRes, topRes] = await Promise.all([
+                dbGetWithFallback(CERT_KEYS.leaf),
+                dbGetWithFallback(CERT_KEYS.inter),
+                dbGetWithFallback(CERT_KEYS.top),
+            ]);
+
+            const leaf  = leafRes.record;
+            const inter = interRes.record;
+            const top   = topRes.record;
 
             if (!leaf || !leaf.privateKey) {
                 throw new Error('未找到叶子证书私钥。请先在「密钥与 CSR 生成器」页面生成并保存叶子证书');
@@ -664,12 +708,10 @@
             if (!inter || !inter.certPem) warnings.push('缺少 2 级 CA 证书');
             if (!top   || !top.certPem)   warnings.push('缺少 1 级 CA 证书');
 
-            // 待签名数据：clientId|timestamp（防重放）
             const ts = Date.now();
             const payload = `${clientId}|${ts}`;
             const payloadBytes = new TextEncoder().encode(payload);
 
-            // 用叶子私钥签名：ECDSA P-384 / SHA-384，返回 raw (r||s) 96 字节
             const sigRaw = new Uint8Array(
                 await crypto.subtle.sign(
                     { name: 'ECDSA', hash: 'SHA-384' },
@@ -678,7 +720,6 @@
                 )
             );
 
-            // 证书链：叶子 → 2 级 CA → 1 级 CA，全部转 DER 再 base64url
             const chain = [pemToDerBytes(leaf.certPem)];
             if (inter && inter.certPem) chain.push(pemToDerBytes(inter.certPem));
             if (top   && top.certPem)   chain.push(pemToDerBytes(top.certPem));
@@ -703,6 +744,11 @@
                 warnings,
                 tokenBytes: tokenB64u.length,
                 leafSubject: quickSubjectFromPem(leaf.certPem),
+                sources: {
+                    leaf:  leafRes.storeName,
+                    inter: interRes.storeName,
+                    top:   topRes.storeName,
+                },
             };
         }
 
@@ -729,13 +775,11 @@
                     pubTopic: 'iot/demo/sensor/control',
                 });
 
-                /* 传输层剩余可调项：附加查询参数 + TLS 校验开关（Node 端） */
                 const wsConfig = reactive({
                     extraQuery: '',
                     rejectUnauthorized: true,
                 });
 
-                /* 证书链状态 */
                 const certStatus = reactive({
                     loading: false,
                     leafReady: false,
@@ -744,30 +788,53 @@
                     leafSubject: '',
                     interSubject: '',
                     topSubject: '',
+                    leafSource: '',
+                    interSource: '',
+                    topSource: '',
                     error: '',
                 });
 
                 const lastTokenBytes = ref(0);
                 const signPreviewPayload = ref('');
 
+                /* 来源 store 显示辅助 */
+                const sourceLabel = (store) => {
+                    if (!store) return '';
+                    return store.includes('leader') ? 'leader' : 'follower';
+                };
+                const sourceColor = (store) => {
+                    if (!store) return 'default';
+                    return store.includes('leader') ? 'blue' : 'green';
+                };
+
                 const refreshCertStatus = async () => {
                     certStatus.loading = true;
                     certStatus.error = '';
                     try {
-                        const [leaf, inter, top] = await Promise.all([
-                            dbGet(CERT_KEYS.leaf).catch(() => null),
-                            dbGet(CERT_KEYS.inter).catch(() => null),
-                            dbGet(CERT_KEYS.top).catch(() => null),
+                        const [leafRes, interRes, topRes] = await Promise.all([
+                            dbGetWithFallback(CERT_KEYS.leaf).catch(() => ({ record: null, storeName: null })),
+                            dbGetWithFallback(CERT_KEYS.inter).catch(() => ({ record: null, storeName: null })),
+                            dbGetWithFallback(CERT_KEYS.top).catch(() => ({ record: null, storeName: null })),
                         ]);
+
+                        const leaf  = leafRes.record;
+                        const inter = interRes.record;
+                        const top   = topRes.record;
+
                         certStatus.leafReady  = !!(leaf && leaf.privateKey && leaf.certPem);
                         certStatus.interReady = !!(inter && inter.certPem);
                         certStatus.topReady   = !!(top && top.certPem);
+
                         certStatus.leafSubject  = leaf  && leaf.certPem  ? (quickSubjectFromPem(leaf.certPem)  || '(证书已存在)') : '';
                         certStatus.interSubject = inter && inter.certPem ? (quickSubjectFromPem(inter.certPem) || '(证书已存在)') : '';
                         certStatus.topSubject   = top   && top.certPem   ? (quickSubjectFromPem(top.certPem)   || '(证书已存在)') : '';
 
+                        certStatus.leafSource  = certStatus.leafReady  ? (leafRes.storeName  || '') : '';
+                        certStatus.interSource = certStatus.interReady ? (interRes.storeName || '') : '';
+                        certStatus.topSource   = certStatus.topReady   ? (topRes.storeName   || '') : '';
+
                         if (!certStatus.leafReady) {
-                            certStatus.error = '叶子证书/私钥未就绪，无法生成认证令牌。请先在「密钥与 CSR 生成器」页面完成叶子证书的生成与签发。';
+                            certStatus.error = '叶子证书/私钥未就绪，无法生成认证令牌。请先在「密钥与 CSR 生成器」页面完成叶子证书的生成与签发（leader 或 follower store 均可）。';
                         } else if (!certStatus.interReady || !certStatus.topReady) {
                             certStatus.error = '证书链不完整，后端验证时可能失败。建议先在证书页面补齐 2 级/1 级 CA 证书。';
                         }
@@ -792,11 +859,6 @@
                     return { url, secure: /^wss:\/\//i.test(url) };
                 };
 
-                /* =========================================================
-                 * 传输层：WebSocket 选项（含自动证书认证）
-                 *   protocols 为 ['mqtt', 'auth.<base64url>']
-                 *   浏览器据此生成请求头 Sec-WebSocket-Protocol: mqtt, auth.xxx
-                 * ========================================================= */
                 const buildWsOptions = async () => {
                     const wsOptions = {};
                     const protocols = ['mqtt'];
@@ -808,6 +870,14 @@
                         signPreviewPayload.value = auth.payload;
 
                         addLog('info', `已用叶子私钥签名并附加证书链（${auth.chainLength} 张，约 ${auth.tokenBytes} 字节）`);
+
+                        // 显示证书来源
+                        const srcParts = [];
+                        if (auth.sources.leaf)  srcParts.push(`叶子=${sourceLabel(auth.sources.leaf)}`);
+                        if (auth.sources.inter) srcParts.push(`2级CA=${sourceLabel(auth.sources.inter)}`);
+                        if (auth.sources.top)   srcParts.push(`1级CA=${sourceLabel(auth.sources.top)}`);
+                        if (srcParts.length) addLog('info', `证书来源：${srcParts.join('，')}`);
+
                         addLog('info', `签名载荷: ${auth.payload}`);
                         if (auth.warnings.length) {
                             addLog('err', `证书链不完整：${auth.warnings.join('；')}`);
@@ -961,7 +1031,7 @@
                 };
 
                 /* =========================================================
-                 * 连接：传输层（含证书 + 签名）→ 协议层（MQTT）
+                 * 连接
                  * ========================================================= */
                 const connectMQTT = async () => {
                     if (mqttClient) {
@@ -1183,6 +1253,7 @@
                     collapsed, drawerOpen, selectedKeys, toggleMenu, isMobile,
                     connectForm, wsConfig,
                     certStatus, refreshCertStatus,
+                    sourceLabel, sourceColor,
                     lastTokenBytes, signPreviewPayload,
                     connected, connecting,
                     logs, summary, devices, alerts, columns,

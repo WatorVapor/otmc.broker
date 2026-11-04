@@ -1234,8 +1234,8 @@ const app = createApp({
 
     /* ===== 导入外部签发的证书链（叶子 + 上级 CA，整体粘贴） ===== */
     const IMPORT_KEYS = {
-      top: 'imported-client-space-top',
-      inter: 'imported-client-space-inter',
+      top: 'client-space-top',
+      inter: 'client-space-inter',
     };
 
     const importForm = reactive({ chainPem: '' });
