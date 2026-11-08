@@ -8,7 +8,7 @@
   "main": "server.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "rm -f /var/run/otmc/space.api.sock; node server.mjs"
+    "dev": "rm -f /var/run/otmc/websocket.mqtt.sock; node server.mjs"
   },
   "dependencies": {
     "express": "^5.3.0"

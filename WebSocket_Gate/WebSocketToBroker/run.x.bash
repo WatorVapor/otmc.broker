@@ -3,7 +3,7 @@ docker run -it \
     -v $(pwd):/app \
     -v /etc/group:/etc/group:ro \
     -v /etc/passwd:/etc/passwd:ro \
-    -v /dev/shm/otmc-dashboard:/var/run/otmc \
+    -v /dev/shm/otmc-websocket-gate:/var/run/otmc \
     -v /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert \
     -v ${HOME}:${HOME} \
     --network host \
