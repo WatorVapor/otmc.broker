@@ -1,7 +1,11 @@
 // multi-bridge-server.js
-const WebSocket = require('ws');
-const mqtt = require('mqtt');
-const url = require('url');
+import WebSocket, { WebSocketServer } from 'ws';
+import mqtt from 'mqtt';
+import { createServer } from 'node:http';
+import { unlinkSync, mkdirSync } from 'node:fs';
+
+const TEMP_DIR = '/var/run/otmc';
+const SOCKET_PATH = `${TEMP_DIR}/websocket.mqtt.sock`;
 
 // ===== 配置：多个 MQTT 后端 =====
 const BACKENDS = {
@@ -38,70 +42,159 @@ const BACKENDS = {
 };
 
 // ===== 连接池：每个后端复用一条 MQTT 连接 =====
-const pools = new Map();
+const pools = new Map();       // backendId -> { client, refCount, closeTimer, subscribers }
+const topicRefs = new Map();   // `${backendId}\u0000${topic}` -> refCount
+
+const IDLE_TIMEOUT_MS = 60_000;  // 引用归零后保留连接的时长
 
 function getBackendClient(backendId) {
-    // 已存在且已连接，直接复用
-    if (pools.has(backendId)) {
-        const entry = pools.get(backendId);
-        if (entry.client.connected || entry.client.reconnecting) {
-            return entry.client;
+    const existing = pools.get(backendId);
+    if (existing) {
+        existing.refCount++;
+        if (existing.closeTimer) {
+            clearTimeout(existing.closeTimer);
+            existing.closeTimer = null;
         }
-        // 连接已彻底断开，清理后重建
-        entry.client.end(true);
-        pools.delete(backendId);
+        return existing;
     }
 
-    // 校验后端是否存在
     const config = BACKENDS[backendId];
     if (!config) return null;
 
-    // 创建新连接
     console.log(`[MQTT] creating connection to backend: ${backendId}`);
     const client = mqtt.connect(config.url, config.options);
 
-    // 记录该连接被哪些 WebSocket 客户端引用
-    const entry = { client, refCount: 0 };
+    const entry = {
+        client,
+        refCount: 1,          // 由调用方持有
+        closeTimer: null,
+        subscribers: new Set(),  // { ws, topic }
+    };
     pools.set(backendId, entry);
 
     client.on('connect', () => console.log(`[MQTT] ${backendId} connected`));
-    client.on('error', (err) => console.error(`[MQTT] ${backendId} error:`, err.message));
     client.on('reconnect', () => console.log(`[MQTT] ${backendId} reconnecting...`));
-    client.on('close', () => {
-        console.log(`[MQTT] ${backendId} closed`);
-        // 延迟清理，避免重连期间被误删
-        setTimeout(() => {
-            const e = pools.get(backendId);
-            if (e && !e.client.connected && e.refCount === 0) {
-                e.client.end(true);
-                pools.delete(backendId);
-                console.log(`[MQTT] ${backendId} pool removed`);
-            }
-        }, 10000);
+    client.on('error', (err) => console.error(`[MQTT] ${backendId} error:`, err.message));
+    client.on('close', () => console.log(`[MQTT] ${backendId} closed`));
+
+    // MQTT -> 浏览器：全局唯一监听，按订阅 filter 过滤后分发
+    client.on('message', (msgTopic, payload) => {
+        const text = payload.toString();
+        for (const sub of entry.subscribers) {
+            if (sub.ws.readyState !== WebSocket.OPEN) continue;
+            if (!mqttMatch(sub.topic, msgTopic)) continue;
+            sub.ws.send(JSON.stringify({
+                backend: backendId,
+                topic: msgTopic,
+                payload: text,
+            }));
+        }
     });
 
-    return client;
+    return entry;
 }
 
-function releaseBackendClient(backendId) {
+function releaseBackend(backendId) {
     const entry = pools.get(backendId);
-    if (entry) {
-        entry.refCount = Math.max(0, entry.refCount - 1);
-        // 引用归零后不立即断开，保留连接供后续复用
-        // 如需严格释放，可在这里判断 refCount === 0 时 end()
+    if (!entry) return;
+    entry.refCount = Math.max(0, entry.refCount - 1);
+    if (entry.refCount > 0 || entry.closeTimer) return;
+
+    // 引用归零后延迟断开，避免频繁重连
+    entry.closeTimer = setTimeout(() => {
+        const e = pools.get(backendId);
+        if (e !== entry || e.refCount > 0) return;
+        e.client.end(true);
+        pools.delete(backendId);
+        console.log(`[MQTT] ${backendId} pool removed (idle)`);
+    }, IDLE_TIMEOUT_MS);
+}
+
+// ===== topic 引用计数：避免共享连接上 unsubscribe 误伤其他客户端 =====
+function acquireTopic(entry, backendId, ws, topic) {
+    const key = `${backendId}\u0000${topic}`;
+    const n = topicRefs.get(key) ?? 0;
+    topicRefs.set(key, n + 1);
+
+    const sub = { ws, topic };
+    entry.subscribers.add(sub);
+
+    if (n === 0) {
+        entry.client.subscribe(topic, (err) => {
+            if (err) console.error(`[MQTT] ${backendId} subscribe "${topic}" error:`, err.message);
+        });
+    }
+    return sub;
+}
+
+function releaseTopic(entry, backendId, sub) {
+    if (shuttingDown) return;
+    entry.subscribers.delete(sub);
+
+    const key = `${backendId}\u0000${sub.topic}`;
+    const n = (topicRefs.get(key) ?? 1) - 1;
+    if (n <= 0) {
+        topicRefs.delete(key);
+        try {
+            entry.client.unsubscribe(sub.topic, () => {});
+        } catch { /* client 可能已 end */ }
+    } else {
+        topicRefs.set(key, n);
     }
 }
 
+// ===== MQTT 通配符匹配（+ 单层，# 多层末尾）=====
+function mqttMatch(filter, topic) {
+    if (filter === topic) return true;
+    const f = filter.split('/');
+    const t = topic.split('/');
+    for (let i = 0; i < f.length; i++) {
+        if (f[i] === '#') return true;
+        if (t[i] === undefined) return false;
+        if (f[i] === '+') continue;
+        if (f[i] !== t[i]) return false;
+    }
+    return f.length === t.length;
+}
+
+// ===== 启动前清理旧 socket =====
+try {
+    mkdirSync(TEMP_DIR, { recursive: true });
+} catch (err) {
+    if (err.code !== 'EEXIST') {
+        console.warn(`[WS] cannot create ${TEMP_DIR}:`, err.message);
+    }
+}
+try {
+    unlinkSync(SOCKET_PATH);
+} catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+}
+
 // ===== WebSocket 服务 =====
-const WS_PORT = 8080;
-const wss = new WebSocket.Server({ port: WS_PORT });
-console.log(`[WS] multi-backend bridge listening on ws://0.0.0.0:${WS_PORT}`);
+const httpServer = createServer();
+const wss = new WebSocketServer({ server: httpServer });
+
+httpServer.listen(SOCKET_PATH, () => {
+    console.log(`[WS] multi-backend bridge listening on unix://${SOCKET_PATH}`);
+});
 
 wss.on('connection', (ws, req) => {
-    const params = url.parse(req.url, true).query;
-    const token = params.token;
-    const backendId = params.backend;   // 指定要连接的后端
-    const topic = params.topic;
+    // 使用 WHATWG URL 替代已废弃的 url.parse
+    let params;
+    try {
+        params = new URL(req.url ?? '/', 'ws://localhost').searchParams;
+    } catch {
+        ws.close(4000, 'Bad request');
+        return;
+    }
+
+    const token     = params.get('token');
+    const backendId = params.get('backend');
+    const topic     = params.get('topic');
+
+    // 不打印 token 明文
+    console.log(`[WS] new connection: backend=${backendId}, topic=${topic}`);
 
     // ===== 认证 =====
     if (!token || !isValidToken(token)) {
@@ -117,67 +210,59 @@ wss.on('connection', (ws, req) => {
         return;
     }
 
-    console.log(`[WS] client connected: backend=${backendId}, topic=${topic}`);
-
     // ===== 获取该后端的 MQTT 连接 =====
-    const mqttClient = getBackendClient(backendId);
-    if (!mqttClient) {
+    const entry = getBackendClient(backendId);
+    if (!entry) {
         ws.close(4003, 'Backend unavailable');
         return;
     }
-    const entry = pools.get(backendId);
-    if (entry) entry.refCount++;
 
-    // ===== 订阅 =====
-    const subscriptions = new Set([topic]);
-    mqttClient.subscribe(topic, (err) => {
-        if (err) console.error(`[MQTT] ${backendId} subscribe error:`, err);
-    });
+    // ===== 订阅（引用计数）=====
+    const sub = acquireTopic(entry, backendId, ws, topic);
+    console.log(`[WS] client connected: backend=${backendId}, topic=${topic}`);
 
-    // ===== 浏览器 → MQTT =====
+    // 心跳标记
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
+    // ===== 浏览器 -> MQTT =====
     ws.on('message', (data) => {
+        const text = Buffer.isBuffer(data) ? data.toString() : String(data);
         try {
-            const msg = JSON.parse(data);
+            const msg = JSON.parse(text);
             const pubTopic = msg.topic || topic;
-            const payload = msg.payload !== undefined ? msg.payload : data.toString();
-            mqttClient.publish(pubTopic, payload);
+            let payload;
+            if (msg.payload === undefined) {
+                payload = text;
+            } else if (typeof msg.payload === 'string' || Buffer.isBuffer(msg.payload)) {
+                payload = msg.payload;
+            } else {
+                payload = JSON.stringify(msg.payload);
+            }
+            entry.client.publish(pubTopic, payload);
         } catch {
-            mqttClient.publish(topic, data.toString());
+            entry.client.publish(topic, text);
         }
     });
-
-    // ===== MQTT → 浏览器 =====
-    const messageHandler = (msgTopic, payload) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        if (subscriptions.has(msgTopic)) {
-            ws.send(JSON.stringify({
-                backend: backendId,
-                topic: msgTopic,
-                payload: payload.toString()
-            }));
-        }
-    };
-    mqttClient.on('message', messageHandler);
 
     // ===== 清理 =====
     ws.on('close', () => {
-        console.log(`[WS] client disconnected: backend=${backendId}`);
-        mqttClient.removeListener('message', messageHandler);
-        mqttClient.unsubscribe(topic);
-        releaseBackendClient(backendId);
+        console.log(`[WS] client disconnected: backend=${backendId}, topic=${topic}`);
+        releaseTopic(entry, backendId, sub);
+        releaseBackend(backendId);
     });
 
     ws.on('error', (err) => console.error('[WS] error:', err.message));
 });
 
-// ===== 心跳保活（应对 Cloudflare 100s 空闲超时）=====
-setInterval(() => {
+// ===== 心跳：发送 ping 并检测 pong，清理半死连接 =====
+const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.ping();
-        }
+        if (ws.isAlive === false) return ws.terminate();
+        ws.isAlive = false;
+        ws.ping();
     });
-}, 30000);
+}, 30_000);
 
 // ===== Token 校验 =====
 function isValidToken(token) {
@@ -185,12 +270,34 @@ function isValidToken(token) {
 }
 
 // ===== 优雅退出 =====
-process.on('SIGINT', () => {
-    console.log('\n[SHUTDOWN] closing all connections...');
+let shuttingDown = false;
+
+function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n[SHUTDOWN] ${signal} received, closing...`);
+
+    clearInterval(heartbeat);
+
+    wss.clients.forEach((ws) => ws.terminate());
     wss.close();
-    pools.forEach((entry, id) => {
+
+    for (const [id, entry] of pools) {
+        if (entry.closeTimer) clearTimeout(entry.closeTimer);
         entry.client.end(true);
         console.log(`[MQTT] ${id} closed`);
+    }
+    pools.clear();
+    topicRefs.clear();
+
+    httpServer.close(() => {
+        try { unlinkSync(SOCKET_PATH); } catch { /* ignore */ }
+        process.exit(0);
     });
-    process.exit(0);
-}); 
+
+    // 兜底：1s 内没退出就强制退出
+    setTimeout(() => process.exit(0), 1000).unref();
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
