@@ -41,6 +41,17 @@ const BACKENDS = {
     }
 };
 
+// ===== WebSocket 子协议白名单（可全局，也可按后端区分）=====
+// 全局默认允许的协议
+const DEFAULT_ALLOWED_PROTOCOLS = new Set(['mqtt', 'mqttv3.1', 'mqtt-bridge.v1']);
+
+// 若需要“按后端”区分，可启用下面这张表（未列出的后端回落到 DEFAULT）
+const ALLOWED_BY_BACKEND = {
+    'backend-a': new Set(['mqtt', 'mqttv3.1']),
+    'backend-b': new Set(['mqtt']),
+    'backend-c': new Set(['mqtt']),
+};
+
 // ===== 连接池：每个后端复用一条 MQTT 连接 =====
 const pools = new Map();       // backendId -> { client, refCount, closeTimer, subscribers }
 const topicRefs = new Map();   // `${backendId}\u0000${topic}` -> refCount
@@ -171,9 +182,44 @@ try {
     if (err.code !== 'ENOENT') throw err;
 }
 
-// ===== WebSocket 服务 =====
+// ===== WebSocket 服务（带子协议协商）=====
 const httpServer = createServer();
-const wss = new WebSocketServer({ server: httpServer });
+
+const wss = new WebSocketServer({
+    server: httpServer,
+
+    // protocols: Set<string>（客户端请求的子协议）
+    // request  : http.IncomingMessage
+    handleProtocols: (protocols, request) => {
+        // 未携带任何子协议 → ws 不会调用此函数，握手以“无子协议”继续
+
+        let backendId = null;
+        try {
+            const url = new URL(request.url ?? '/', 'ws://localhost');
+            backendId = url.searchParams.get('backend');
+        } catch { /* URL 解析失败按默认处理 */ }
+
+        // 优先使用按后端白名单，否则回落到全局默认
+        const allowed = (backendId && ALLOWED_BY_BACKEND[backendId])
+            || DEFAULT_ALLOWED_PROTOCOLS;
+
+        for (const proto of protocols) {
+            if (allowed.has(proto)) {
+                console.log(
+                    `[WS] negotiated subprotocol: ${proto}` +
+                    (backendId ? ` (backend=${backendId})` : '')
+                );
+                return proto;
+            }
+        }
+
+        console.warn(
+            `[WS] rejecting handshake: no acceptable subprotocol ` +
+            `(client sent: ${[...protocols].join(', ') || '<none>'}${backendId ? `, backend=${backendId}` : ''})`
+        );
+        return false;  // false => 中止握手
+    },
+});
 
 httpServer.listen(SOCKET_PATH, () => {
     console.log(`[WS] multi-backend bridge listening on unix://${SOCKET_PATH}`);
@@ -200,7 +246,9 @@ wss.on('connection', (ws, req) => {
     const topic     = params.get('topic');
 
     // 不打印 token 明文
-    console.log(`[WS] new connection: backend=${backendId}, topic=${topic}`);
+    console.log(
+        `[WS] new connection: backend=${backendId}, topic=${topic}, subprotocol=${ws.protocol || '<none>'}`
+    );
 
     // ===== 认证 =====
     if (!token || !isValidToken(token)) {
@@ -350,3 +398,4 @@ const  decodeBase64UrlJson = (s) => {
     return s;
   }
 }
+process.on('SIGTERM', () => shutdown('SIGTERM'));
