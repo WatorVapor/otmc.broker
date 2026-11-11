@@ -188,6 +188,12 @@ wss.on('connection', (ws, req) => {
         ws.close(4000, 'Bad request');
         return;
     }
+    const headers = req.headers;
+    // console.log('[WS] headers:=<', headers, '>');
+    const  headsWSSecKey = headers['sec-websocket-protocol'];
+    // console.log('[WS] headsWSSecKey:=<', headsWSSecKey, '>');
+    const certMqttAuth = parseMqttAuthText(headsWSSecKey);
+    console.log('[WS] certMqttAuth:=<', certMqttAuth, '>');
 
     const token     = params.get('token');
     const backendId = params.get('backend');
@@ -301,3 +307,46 @@ function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+
+import fs from 'node:fs';
+
+const  parseMqttAuthText = (text) => {
+  const clean = String(text).trim().replace(/>\s*$/, '');
+  const map = {};
+
+  for (const item of clean.split(',')) {
+    const seg = item.trim();
+    if (!seg) continue;
+
+    const dotIndex = seg.indexOf('.');
+
+    // 例如 mqtt 没有 ".xxx"，值置空
+    if (dotIndex === -1) {
+      map[seg] = '';
+      continue;
+    }
+
+    const key = seg.slice(0, dotIndex).trim();
+    const rawValue = seg.slice(dotIndex + 1).trim();
+
+    if (key === 'auth') {
+      map[key] = decodeBase64UrlJson(rawValue);
+    } else {
+      map[key] = rawValue;
+    }
+  }
+
+  return map;
+}
+
+const  decodeBase64UrlJson = (s) => {
+  try {
+    let b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+  } catch (err) {
+    // 解码失败则保留原始值，避免整个解析失败
+    return s;
+  }
+}

@@ -109,6 +109,7 @@
         .ws-preview code {
             background: #fff; border: 1px solid #d9d9d9; border-radius: 3px;
             padding: 0 4px; font-family: 'Consolas', monospace; color: #d4380d;
+            margin-right: 4px;
         }
         .ws-preview b { color: #237804; }
         .ws-preview .muted { color: #8c8c8c; }
@@ -254,6 +255,10 @@
                                             <a-switch v-model:checked="wsConfig.rejectUnauthorized" />
                                         </a-form-item>
 
+                                        <a-form-item label="将证书链（叶子 / 2 级 CA / 1 级 CA）追加为独立子协议">
+                                            <a-switch v-model:checked="wsConfig.appendCertsAsProtocols" />
+                                        </a-form-item>
+
                                         <div style="margin-bottom: 10px;">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                                 <span style="font-size: 13px; font-weight: 500;">客户端证书链状态</span>
@@ -298,7 +303,12 @@
                                                 ⚠️ {{ certStatus.error }}
                                             </div>
                                             <div v-else-if="lastTokenBytes > 0">
-                                                已附加 <b>auth.&lt;token&gt;</b> 子协议，长度约 <b>{{ lastTokenBytes }}</b> 字节。
+                                                已附加 <b>auth.&lt;token&gt;</b> 子协议（{{ lastTokenBytes }} 字节）
+                                                <template v-if="lastCertProtocols.length > 0">
+                                                    ，以及 {{ lastCertProtocols.length }} 个证书链子协议
+                                                    <code>{{ lastCertProtocols.map(p => p.name + '=' + p.bytes + 'B').join(' ') }}</code>
+                                                </template>
+                                                ，Sec-WebSocket-Protocol 合计约 <b>{{ lastProtocolBytes }}</b> 字节。
                                                 <br />
                                                 <span class="muted">
                                                     签名算法 <code>ECDSA P-384 / SHA-384</code>；
@@ -306,11 +316,14 @@
                                                     每次连接都会用叶子私钥重新签名
                                                     <code>{{ signPreviewPayload }}</code>。
                                                 </span>
+                                                <div v-if="lastProtocolBytes > 6000" class="err-text" style="margin-top:6px;">
+                                                    ⚠️ Sec-WebSocket-Protocol 已超过 6 KB，部分反向代理（默认 8 KB 头部上限）可能拒绝连接。
+                                                </div>
                                             </div>
                                             <div v-else class="muted">
                                                 连接时将自动读取 3 张证书（优先 leader，缺失时回退 follower）
                                                 并用叶子私钥签名，附加到
-                                                <code>Sec-WebSocket-Protocol: mqtt, auth.&lt;base64url&gt;</code>。
+                                                <code>Sec-WebSocket-Protocol: mqtt, auth.&lt;base64url&gt;, cert-leaf.&lt;base64url&gt;, cert-ca2.&lt;base64url&gt;, cert-ca1.&lt;base64url&gt;</code>。
                                             </div>
                                         </div>
                                     </div>
@@ -519,7 +532,6 @@
          * ========================================================= */
         const DB_NAME = 'omtc-mtls-keystore';
 
-        // 按优先级排列：先查 leader，再查 follower
         const STORE_NAMES = [
             'browser_leader_cert_and_keys',
             'browser_follower_cert_and_keys',
@@ -539,7 +551,6 @@
                 try { req = indexedDB.open(DB_NAME); }
                 catch (e) { return reject(e); }
                 req.onupgradeneeded = () => {
-                    // 数据库新建/升级时，把所有共享 store 都补齐
                     const db = req.result;
                     STORE_NAMES.forEach((name) => {
                         if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
@@ -553,7 +564,6 @@
             return dbPromise;
         }
 
-        /* 从指定 store 读取（store 不存在时返回 null，不抛异常） */
         async function dbGetFromStore(storeName, key) {
             const db = await openDb();
             if (!db.objectStoreNames.contains(storeName)) return null;
@@ -569,7 +579,6 @@
             });
         }
 
-        /* 依次尝试 STORE_NAMES，返回第一个命中的记录 + 来源 store */
         async function dbGetWithFallback(key) {
             const errors = [];
             for (const storeName of STORE_NAMES) {
@@ -720,9 +729,11 @@
                 )
             );
 
-            const chain = [pemToDerBytes(leaf.certPem)];
-            if (inter && inter.certPem) chain.push(pemToDerBytes(inter.certPem));
-            if (top   && top.certPem)   chain.push(pemToDerBytes(top.certPem));
+            const chainDer = [pemToDerBytes(leaf.certPem)];
+            if (inter && inter.certPem) chainDer.push(pemToDerBytes(inter.certPem));
+            if (top   && top.certPem)   chainDer.push(pemToDerBytes(top.certPem));
+
+            const chainB64uList = chainDer.map(bytesToBase64url);
 
             const token = {
                 v: 1,
@@ -731,7 +742,7 @@
                 cid: clientId,
                 payload,
                 sig: bytesToBase64url(sigRaw),
-                chain: chain.map(bytesToBase64url),
+                chain: chainB64uList,
             };
 
             const tokenJson = new TextEncoder().encode(JSON.stringify(token));
@@ -740,7 +751,8 @@
             return {
                 tokenB64u,
                 payload,
-                chainLength: chain.length,
+                chainLength: chainDer.length,
+                chainB64uList,
                 warnings,
                 tokenBytes: tokenB64u.length,
                 leafSubject: quickSubjectFromPem(leaf.certPem),
@@ -778,6 +790,7 @@
                 const wsConfig = reactive({
                     extraQuery: '',
                     rejectUnauthorized: true,
+                    appendCertsAsProtocols: true,
                 });
 
                 const certStatus = reactive({
@@ -795,9 +808,10 @@
                 });
 
                 const lastTokenBytes = ref(0);
+                const lastCertProtocols = ref([]);
+                const lastProtocolBytes = ref(0);
                 const signPreviewPayload = ref('');
 
-                /* 来源 store 显示辅助 */
                 const sourceLabel = (store) => {
                     if (!store) return '';
                     return store.includes('leader') ? 'leader' : 'follower';
@@ -859,19 +873,47 @@
                     return { url, secure: /^wss:\/\//i.test(url) };
                 };
 
-                const buildWsOptions = async () => {
-                    const wsOptions = {};
+                /**
+                 * 构建完整的子协议列表。
+                 * 返回值中的 protocols 数组会同时用于：
+                 *   1) createWebsocket 中手动 new WebSocket(url, protocols)
+                 *   2) UI 上的字节数统计与日志展示
+                 */
+                const buildWsProtocols = async () => {
                     const protocols = ['mqtt'];
+                    let totalBytes = 'mqtt'.length;
+                    let certProtocols = [];
 
                     try {
                         const auth = await buildAuthToken(connectForm.clientId);
-                        protocols.push('auth.' + auth.tokenB64u);
+
+                        // 1) 认证令牌：auth.<base64url>
+                        const authProto = 'auth.' + auth.tokenB64u;
+                        protocols.push(authProto);
+                        totalBytes += authProto.length;
                         lastTokenBytes.value = auth.tokenBytes;
                         signPreviewPayload.value = auth.payload;
 
-                        addLog('info', `已用叶子私钥签名并附加证书链（${auth.chainLength} 张，约 ${auth.tokenBytes} 字节）`);
+                        // 2) 证书链：leaf / 2nd-level CA / 1st-level CA 各自作为独立子协议
+                        if (wsConfig.appendCertsAsProtocols && auth.chainB64uList && auth.chainB64uList.length) {
+                            const labels = ['leaf', 'ca2', 'ca1'];
+                            auth.chainB64uList.forEach((b64u, idx) => {
+                                const name = 'cert-' + (labels[idx] || (idx + 1));
+                                const proto = name + '.' + b64u;
+                                protocols.push(proto);
+                                totalBytes += proto.length;
+                                certProtocols.push({ name, bytes: proto.length });
+                            });
+                        }
+                        lastCertProtocols.value = certProtocols;
+                        lastProtocolBytes.value = totalBytes;
 
-                        // 显示证书来源
+                        addLog('info', `已用叶子私钥签名并附加证书链（${auth.chainLength} 张，token 约 ${auth.tokenBytes} 字节）`);
+                        if (certProtocols.length) {
+                            addLog('info', `证书链子协议：${certProtocols.map(p => `${p.name}(${p.bytes}B)`).join('，')}`);
+                        }
+                        addLog('info', `Sec-WebSocket-Protocol 合计约 ${totalBytes} 字节`);
+
                         const srcParts = [];
                         if (auth.sources.leaf)  srcParts.push(`叶子=${sourceLabel(auth.sources.leaf)}`);
                         if (auth.sources.inter) srcParts.push(`2级CA=${sourceLabel(auth.sources.inter)}`);
@@ -884,16 +926,14 @@
                         }
                     } catch (e) {
                         lastTokenBytes.value = 0;
+                        lastCertProtocols.value = [];
+                        lastProtocolBytes.value = 'mqtt'.length;
                         signPreviewPayload.value = '';
                         addLog('err', `认证令牌生成失败：${e && e.message ? e.message : e}`);
                         addLog('err', '本次连接将退化为匿名（仅 mqtt 子协议），后端若要求认证会被拒绝');
                     }
 
-                    wsOptions.protocols = protocols;
-
-                    if (wsConfig.rejectUnauthorized === false) wsOptions.rejectUnauthorized = false;
-
-                    return { wsOptions };
+                    return protocols;
                 };
 
                 /* =========================================================
@@ -1031,7 +1071,7 @@
                 };
 
                 /* =========================================================
-                 * 连接
+                 * 连接（核心修改：createWebsocket 接管 WebSocket 创建）
                  * ========================================================= */
                 const connectMQTT = async () => {
                     if (mqttClient) {
@@ -1042,13 +1082,28 @@
                     connecting.value = true;
 
                     const { url: wsUrl, secure } = buildWsEndpoint();
-                    const { wsOptions } = await buildWsOptions();
+                    const protocols = await buildWsProtocols(); // ['mqtt', 'auth.…', 'cert-leaf.…', …]
                     const mqttPart = buildMqttOptions();
 
-                    const options = { ...mqttPart, wsOptions };
+                    /**
+                     * 关键：用 createWebsocket 手动构造 WebSocket，
+                     * 把完整的 protocols 数组传给浏览器原生 WebSocket。
+                     * 浏览器会将这些子协议全部写入 Sec-WebSocket-Protocol 请求头。
+                     *
+                     * 回调签名：(url, websocketSubProtocols, options) => WebSocket
+                     * 我们忽略 mqtt.js 传入的默认子协议，使用自己构造的 protocols。
+                     */
+                    const options = {
+                        ...mqttPart,
+                        createWebsocket: (_url, _defaultSubProtocols, _wsOpts) => {
+                            return new WebSocket(_url, protocols);
+                        },
+                    };
 
                     addLog('info', `正在连接 ${secure ? 'WSS' : 'WS'} 端点 ${wsUrl} …`);
-                    addLog('info', `Sec-WebSocket-Protocol → ${wsOptions.protocols.map(p => p.length > 40 ? p.slice(0, 20) + '…' + p.slice(-8) : p).join(', ')}`);
+                    addLog('info', `createWebsocket 将发送 ${protocols.length} 个子协议：` +
+                        protocols.map(p => p.length > 40 ? p.slice(0, 20) + '…' + p.slice(-8) : p).join(', '));
+                    console.log('connectMQTT::options:=<', options, '>');
 
                     mqttClient = mqtt.connect(wsUrl, options);
 
@@ -1073,7 +1128,7 @@
 
                     mqttClient.on('reconnect', () => {
                         connecting.value = true;
-                        addLog('info', '正在重连 …（沿用首次连接时的签名与证书链）');
+                        addLog('info', '正在重连 …（createWebsocket 会重新使用当前 protocols 列表）');
                     });
 
                     mqttClient.on('close', () => {
@@ -1254,7 +1309,7 @@
                     connectForm, wsConfig,
                     certStatus, refreshCertStatus,
                     sourceLabel, sourceColor,
-                    lastTokenBytes, signPreviewPayload,
+                    lastTokenBytes, lastCertProtocols, lastProtocolBytes, signPreviewPayload,
                     connected, connecting,
                     logs, summary, devices, alerts, columns,
                     pubMessage, lineRef, donutRef,
