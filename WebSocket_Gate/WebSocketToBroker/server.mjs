@@ -3,6 +3,9 @@ import WebSocket, { WebSocketServer } from 'ws';
 import mqtt from 'mqtt';
 import { createServer } from 'node:http';
 import { unlinkSync, mkdirSync } from 'node:fs';
+import fs from 'node:fs';
+import { X509Certificate, verify } from 'node:crypto';
+import * as path from "path";
 
 const TEMP_DIR = '/var/run/otmc';
 const SOCKET_PATH = `${TEMP_DIR}/websocket.mqtt.sock`;
@@ -239,7 +242,14 @@ wss.on('connection', (ws, req) => {
     const  headsWSSecKey = headers['sec-websocket-protocol'];
     // console.log('[WS] headsWSSecKey:=<', headsWSSecKey, '>');
     const certMqttAuth = parseMqttAuthText(headsWSSecKey);
-    console.log('[WS] certMqttAuth:=<', certMqttAuth, '>');
+    // console.log('[WS] certMqttAuth:=<', certMqttAuth, '>');
+    const certMqttAuthJson = certMqttAuth.auth;
+    console.log('[WS] certMqttAuthJson:=<', certMqttAuthJson, '>');
+    const verifyResult = verifyMqttAuth(certMqttAuthJson);
+    if (!verifyResult) {
+        ws.close(4001, 'Unauthorized');
+        return;
+    }
 
     const token     = params.get('token');
     const backendId = params.get('backend');
@@ -357,7 +367,6 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 
-import fs from 'node:fs';
 
 const  parseMqttAuthText = (text) => {
   const clean = String(text).trim().replace(/>\s*$/, '');
@@ -399,3 +408,33 @@ const  decodeBase64UrlJson = (s) => {
   }
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+
+const caRootMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/client-root.crt"));
+const caTrustedMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/ca_inter_bundle.crt"));
+
+const verifyMqttAuth = (auth) => {
+  if (!auth || typeof auth !== 'object') {
+    return false;
+  }
+  const certs = auth.chain.map((c) => new X509Certificate(toPem(c)));
+  console.log('[WS] certs:=<', certs, '>');
+  const leafCert = certs[0]; // 叶子证书，用它的公钥验签
+  const verifyData = Buffer.from(auth.payload, 'utf8');
+  const signature = Buffer.from(auth.sig, 'base64url'); // sig 是 Base64URL
+  const isValid = verify(
+    'sha384',                 // ECDSA-P384-SHA384 中的哈希算法
+    verifyData,               // 原始 payload 字节
+    leafCert.publicKey,       // 叶子证书公钥
+    signature,
+    { dsaEncoding: 'der' }    // 如果失败，改成 'ieee-p1363' 再试
+  );
+  console.log('[WS] isValid:=<', isValid, '>');
+
+}
+
+function toPem(base64Cert) {
+  const lines = base64Cert.match(/.{1,64}/g).join('\n');
+  return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----\n`;
+}
+
