@@ -5,12 +5,19 @@ import { createServer } from 'node:http';
 import { unlinkSync, mkdirSync } from 'node:fs';
 import fs from 'node:fs';
 import { X509Certificate, verify } from 'node:crypto';
-import * as path from "path";
+import * as path from 'path';
 
+// ============================================================
+// 0. 全局状态
+// ============================================================
 const TEMP_DIR = '/var/run/otmc';
 const SOCKET_PATH = `${TEMP_DIR}/websocket.mqtt.sock`;
 
-// ===== 配置：多个 MQTT 后端 =====
+let shuttingDown = false;
+
+// ============================================================
+// 1. 多个 MQTT 后端配置
+// ============================================================
 const BACKENDS = {
     'backend-a': {
         url: 'mqtt://127.0.0.1:1883',
@@ -31,7 +38,7 @@ const BACKENDS = {
         }
     },
     'backend-c': {
-        url: 'mqtts://remote.example.com:8883',  // TLS 后端
+        url: 'mqtts://remote.example.com:8883',
         options: {
             clientId: 'bridge-c-' + Math.random().toString(16).slice(2, 8),
             clean: true,
@@ -44,22 +51,187 @@ const BACKENDS = {
     }
 };
 
-// ===== WebSocket 子协议白名单（可全局，也可按后端区分）=====
-// 全局默认允许的协议
+// ============================================================
+// 2. WebSocket 子协议白名单
+// ============================================================
 const DEFAULT_ALLOWED_PROTOCOLS = new Set(['mqtt', 'mqttv3.1', 'mqtt-bridge.v1']);
 
-// 若需要“按后端”区分，可启用下面这张表（未列出的后端回落到 DEFAULT）
 const ALLOWED_BY_BACKEND = {
     'backend-a': new Set(['mqtt', 'mqttv3.1']),
     'backend-b': new Set(['mqtt']),
     'backend-c': new Set(['mqtt']),
 };
 
-// ===== 连接池：每个后端复用一条 MQTT 连接 =====
+// ============================================================
+// 3. MQTT 认证用的信任锚（证书）
+// ============================================================
+const caRootMqttClient = fs.readFileSync(
+    path.resolve('/usr/local/etc/certs/client_cert/client-root.crt')
+);
+const caTrustedMqttClient = fs.readFileSync(
+    path.resolve('/usr/local/etc/certs/client_cert/ca_inter_bundle.crt')
+);
+
+// 把 PEM bundle 拆成多个 X509Certificate（new X509Certificate 只读第一个）
+function loadPemBundle(pem) {
+    const matches = String(pem).match(
+        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g
+    ) || [];
+    return matches.map((p) => new X509Certificate(p));
+}
+
+// 这里同时信任 root 与 inter bundle（与原实现一致）。
+// 更严格的做法是只信任 root，把 inter 作为链中间环节由 checkIssued+verify 动态验证。
+const TRUSTED_CERTS = [
+    ...loadPemBundle(caRootMqttClient),
+    ...loadPemBundle(caTrustedMqttClient),
+];
+
+// ============================================================
+// 4. 认证辅助函数
+// ============================================================
+function toPem(base64Cert) {
+    const lines = String(base64Cert).match(/.{1,64}/g)?.join('\n') ?? '';
+    return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----\n`;
+}
+
+function decodeBase64UrlJson(s) {
+    try {
+        let b64 = String(s).replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    } catch {
+        return s;
+    }
+}
+
+function parseMqttAuthText(text) {
+    const clean = String(text).trim().replace(/>\s*$/, '');
+    const map = {};
+
+    for (const item of clean.split(',')) {
+        const seg = item.trim();
+        if (!seg) continue;
+
+        const dotIndex = seg.indexOf('.');
+        if (dotIndex === -1) {
+            map[seg] = '';
+            continue;
+        }
+
+        const key = seg.slice(0, dotIndex).trim();
+        const rawValue = seg.slice(dotIndex + 1).trim();
+
+        if (key === 'auth') {
+            map[key] = decodeBase64UrlJson(rawValue);
+        } else {
+            map[key] = rawValue;
+        }
+    }
+
+    return map;
+}
+
+// ============================================================
+// 5. 证书链 + 签名校验
+//    auth = { chain: [leafB64, interB64?, rootB64?], payload, sig }
+//    chain 顺序约定：leaf → … → root
+// ============================================================
+function verifyMqttAuth(auth) {
+    if (!auth || typeof auth !== 'object') return false;
+    if (!Array.isArray(auth.chain) || auth.chain.length === 0) return false;
+    if (typeof auth.payload !== 'string' || typeof auth.sig !== 'string') return false;
+
+    // --- 解析证书链 ---
+    let certs;
+    try {
+        certs = auth.chain.map((c) => new X509Certificate(toPem(c)));
+    } catch (err) {
+        console.warn('[WS] invalid cert in chain:', err.message);
+        return false;
+    }
+
+    // --- 有效期 ---
+    // 注意：X509Certificate.verify() 本身不检查有效期，必须手动检查
+    const now = Date.now();
+    for (const cert of certs) {
+        const from = new Date(cert.validFrom).getTime();
+        const to = new Date(cert.validTo).getTime();
+        if (!(from <= now && now <= to)) {
+            console.warn('[WS] cert expired/not-yet-valid:', cert.subject);
+            return false;
+        }
+    }
+
+    // --- 链内逐级验签：certs[i] 必须由 certs[i+1] 签发 ---
+    for (let i = 0; i < certs.length - 1; i++) {
+        const child = certs[i];
+        const parent = certs[i + 1];
+        try {
+            if (!child.checkIssued(parent) || !child.verify(parent.publicKey)) {
+                console.warn(`[WS] chain signature check failed: [${i}] <- [${i + 1}]`);
+                return false;
+            }
+        } catch (err) {
+            console.warn(`[WS] chain verify error at ${i}:`, err.message);
+            return false;
+        }
+    }
+
+    // --- 链尾必须锚定到受信任证书 ---
+    const last = certs[certs.length - 1];
+    const anchored = TRUSTED_CERTS.some((t) => {
+        // (A) 链尾本身就是受信任证书
+        if (last.raw.equals(t.raw)) return true;
+        // (B) 链尾由受信任证书签发（例如 chain 只到 intermediate）
+        try {
+            return last.checkIssued(t) && last.verify(t.publicKey);
+        } catch {
+            return false;
+        }
+    });
+    if (!anchored) {
+        console.warn('[WS] chain does not anchor to trusted root');
+        return false;
+    }
+
+    // --- 用叶子证书公钥验证 payload 签名 ---
+    const leaf = certs[0];
+    const verifyData = Buffer.from(auth.payload, 'utf8');
+    const signature = Buffer.from(auth.sig, 'base64url');
+
+    let ok = false;
+    try {
+        ok = verify('sha384', verifyData, leaf.publicKey, signature, {
+            dsaEncoding: 'der',
+        });
+    } catch {
+        try {
+            ok = verify('sha384', verifyData, leaf.publicKey, signature, {
+                dsaEncoding: 'ieee-p1363',
+            });
+        } catch (err2) {
+            console.warn('[WS] signature verify error:', err2.message);
+            return false;
+        }
+    }
+
+    if (!ok) {
+        console.warn('[WS] payload signature invalid');
+        return false;
+    }
+
+    console.log('[WS] mqtt auth OK, subject=%s', leaf.subject);
+    return true;
+}
+
+// ============================================================
+// 6. MQTT 连接池
+// ============================================================
 const pools = new Map();       // backendId -> { client, refCount, closeTimer, subscribers }
 const topicRefs = new Map();   // `${backendId}\u0000${topic}` -> refCount
 
-const IDLE_TIMEOUT_MS = 60_000;  // 引用归零后保留连接的时长
+const IDLE_TIMEOUT_MS = 60_000;
 
 function getBackendClient(backendId) {
     const existing = pools.get(backendId);
@@ -80,9 +252,9 @@ function getBackendClient(backendId) {
 
     const entry = {
         client,
-        refCount: 1,          // 由调用方持有
+        refCount: 1,
         closeTimer: null,
-        subscribers: new Set(),  // { ws, topic }
+        subscribers: new Set(), // { ws, topic }
     };
     pools.set(backendId, entry);
 
@@ -114,7 +286,6 @@ function releaseBackend(backendId) {
     entry.refCount = Math.max(0, entry.refCount - 1);
     if (entry.refCount > 0 || entry.closeTimer) return;
 
-    // 引用归零后延迟断开，避免频繁重连
     entry.closeTimer = setTimeout(() => {
         const e = pools.get(backendId);
         if (e !== entry || e.refCount > 0) return;
@@ -124,7 +295,9 @@ function releaseBackend(backendId) {
     }, IDLE_TIMEOUT_MS);
 }
 
-// ===== topic 引用计数：避免共享连接上 unsubscribe 误伤其他客户端 =====
+// ============================================================
+// 7. topic 引用计数
+// ============================================================
 function acquireTopic(entry, backendId, ws, topic) {
     const key = `${backendId}\u0000${topic}`;
     const n = topicRefs.get(key) ?? 0;
@@ -135,7 +308,10 @@ function acquireTopic(entry, backendId, ws, topic) {
 
     if (n === 0) {
         entry.client.subscribe(topic, (err) => {
-            if (err) console.error(`[MQTT] ${backendId} subscribe "${topic}" error:`, err.message);
+            if (err) console.error(
+                `[MQTT] ${backendId} subscribe "${topic}" error:`,
+                err.message
+            );
         });
     }
     return sub;
@@ -157,7 +333,9 @@ function releaseTopic(entry, backendId, sub) {
     }
 }
 
-// ===== MQTT 通配符匹配（+ 单层，# 多层末尾）=====
+// ============================================================
+// 8. MQTT 通配符匹配
+// ============================================================
 function mqttMatch(filter, topic) {
     if (filter === topic) return true;
     const f = filter.split('/');
@@ -171,7 +349,9 @@ function mqttMatch(filter, topic) {
     return f.length === t.length;
 }
 
-// ===== 启动前清理旧 socket =====
+// ============================================================
+// 9. 启动前清理旧 socket
+// ============================================================
 try {
     mkdirSync(TEMP_DIR, { recursive: true });
 } catch (err) {
@@ -185,24 +365,21 @@ try {
     if (err.code !== 'ENOENT') throw err;
 }
 
-// ===== WebSocket 服务（带子协议协商）=====
+// ============================================================
+// 10. WebSocket 服务
+// ============================================================
 const httpServer = createServer();
 
 const wss = new WebSocketServer({
     server: httpServer,
 
-    // protocols: Set<string>（客户端请求的子协议）
-    // request  : http.IncomingMessage
     handleProtocols: (protocols, request) => {
-        // 未携带任何子协议 → ws 不会调用此函数，握手以“无子协议”继续
-
         let backendId = null;
         try {
             const url = new URL(request.url ?? '/', 'ws://localhost');
             backendId = url.searchParams.get('backend');
-        } catch { /* URL 解析失败按默认处理 */ }
+        } catch { /* ignore */ }
 
-        // 优先使用按后端白名单，否则回落到全局默认
         const allowed = (backendId && ALLOWED_BY_BACKEND[backendId])
             || DEFAULT_ALLOWED_PROTOCOLS;
 
@@ -218,9 +395,10 @@ const wss = new WebSocketServer({
 
         console.warn(
             `[WS] rejecting handshake: no acceptable subprotocol ` +
-            `(client sent: ${[...protocols].join(', ') || '<none>'}${backendId ? `, backend=${backendId}` : ''})`
+            `(client sent: ${[...protocols].join(', ') || '<none>'}` +
+            `${backendId ? `, backend=${backendId}` : ''})`
         );
-        return false;  // false => 中止握手
+        return false;
     },
 });
 
@@ -229,7 +407,6 @@ httpServer.listen(SOCKET_PATH, () => {
 });
 
 wss.on('connection', (ws, req) => {
-    // 使用 WHATWG URL 替代已废弃的 url.parse
     let params;
     try {
         params = new URL(req.url ?? '/', 'ws://localhost').searchParams;
@@ -237,30 +414,31 @@ wss.on('connection', (ws, req) => {
         ws.close(4000, 'Bad request');
         return;
     }
+
+    // ===== 证书链 + 签名校验 =====
     const headers = req.headers;
-    // console.log('[WS] headers:=<', headers, '>');
-    const  headsWSSecKey = headers['sec-websocket-protocol'];
-    // console.log('[WS] headsWSSecKey:=<', headsWSSecKey, '>');
+    const headsWSSecKey = headers['sec-websocket-protocol'];
     const certMqttAuth = parseMqttAuthText(headsWSSecKey);
-    // console.log('[WS] certMqttAuth:=<', certMqttAuth, '>');
     const certMqttAuthJson = certMqttAuth.auth;
     console.log('[WS] certMqttAuthJson:=<', certMqttAuthJson, '>');
+
     const verifyResult = verifyMqttAuth(certMqttAuthJson);
     if (!verifyResult) {
         ws.close(4001, 'Unauthorized');
         return;
     }
 
-    const token     = params.get('token');
+    // ===== 参数解析 =====
+    const token = params.get('token');
     const backendId = params.get('backend');
-    const topic     = params.get('topic');
+    const topic = params.get('topic');
 
-    // 不打印 token 明文
     console.log(
-        `[WS] new connection: backend=${backendId}, topic=${topic}, subprotocol=${ws.protocol || '<none>'}`
+        `[WS] new connection: backend=${backendId}, topic=${topic}, ` +
+        `subprotocol=${ws.protocol || '<none>'}`
     );
 
-    // ===== 认证 =====
+    // ===== token / backend / topic 校验 =====
     if (!token || !isValidToken(token)) {
         ws.close(4001, 'Unauthorized');
         return;
@@ -281,11 +459,10 @@ wss.on('connection', (ws, req) => {
         return;
     }
 
-    // ===== 订阅（引用计数）=====
+    // ===== 订阅 =====
     const sub = acquireTopic(entry, backendId, ws, topic);
     console.log(`[WS] client connected: backend=${backendId}, topic=${topic}`);
 
-    // 心跳标记
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
@@ -319,7 +496,9 @@ wss.on('connection', (ws, req) => {
     ws.on('error', (err) => console.error('[WS] error:', err.message));
 });
 
-// ===== 心跳：发送 ping 并检测 pong，清理半死连接 =====
+// ============================================================
+// 11. 心跳
+// ============================================================
 const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
@@ -328,14 +507,16 @@ const heartbeat = setInterval(() => {
     });
 }, 30_000);
 
-// ===== Token 校验 =====
+// ============================================================
+// 12. Token 校验
+// ============================================================
 function isValidToken(token) {
     return token === 'your-secret-token';
 }
 
-// ===== 优雅退出 =====
-let shuttingDown = false;
-
+// ============================================================
+// 13. 优雅退出
+// ============================================================
 function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -359,82 +540,8 @@ function shutdown(signal) {
         process.exit(0);
     });
 
-    // 兜底：1s 内没退出就强制退出
     setTimeout(() => process.exit(0), 1000).unref();
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-
-
-const  parseMqttAuthText = (text) => {
-  const clean = String(text).trim().replace(/>\s*$/, '');
-  const map = {};
-
-  for (const item of clean.split(',')) {
-    const seg = item.trim();
-    if (!seg) continue;
-
-    const dotIndex = seg.indexOf('.');
-
-    // 例如 mqtt 没有 ".xxx"，值置空
-    if (dotIndex === -1) {
-      map[seg] = '';
-      continue;
-    }
-
-    const key = seg.slice(0, dotIndex).trim();
-    const rawValue = seg.slice(dotIndex + 1).trim();
-
-    if (key === 'auth') {
-      map[key] = decodeBase64UrlJson(rawValue);
-    } else {
-      map[key] = rawValue;
-    }
-  }
-
-  return map;
-}
-
-const  decodeBase64UrlJson = (s) => {
-  try {
-    let b64 = s.replace(/-/g, '+').replace(/_/g, '/');
-    while (b64.length % 4) b64 += '=';
-    return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-  } catch (err) {
-    // 解码失败则保留原始值，避免整个解析失败
-    return s;
-  }
-}
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-
-const caRootMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/client-root.crt"));
-const caTrustedMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/ca_inter_bundle.crt"));
-
-const verifyMqttAuth = (auth) => {
-  if (!auth || typeof auth !== 'object') {
-    return false;
-  }
-  const certs = auth.chain.map((c) => new X509Certificate(toPem(c)));
-  console.log('[WS] certs:=<', certs, '>');
-  const leafCert = certs[0]; // 叶子证书，用它的公钥验签
-  const verifyData = Buffer.from(auth.payload, 'utf8');
-  const signature = Buffer.from(auth.sig, 'base64url'); // sig 是 Base64URL
-  const isValid = verify(
-    'sha384',                 // ECDSA-P384-SHA384 中的哈希算法
-    verifyData,               // 原始 payload 字节
-    leafCert.publicKey,       // 叶子证书公钥
-    signature,
-    { dsaEncoding: 'der' }    // 如果失败，改成 'ieee-p1363' 再试
-  );
-  console.log('[WS] isValid:=<', isValid, '>');
-
-}
-
-function toPem(base64Cert) {
-  const lines = base64Cert.match(/.{1,64}/g).join('\n');
-  return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----\n`;
-}
-
