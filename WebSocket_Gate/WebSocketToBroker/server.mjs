@@ -74,7 +74,7 @@ const caRootMqttClient = fs.readFileSync(
     path.resolve('/usr/local/etc/certs/client_cert/client-root.crt')
 );
 const caTrustedMqttClient = fs.readFileSync(
-    path.resolve('/usr/local/etc/certs/client_cert/ca_inter_bundle.crt')
+    path.resolve('/usr/local/etc/certs/client_cert/client-broker-inter.crt')
 );
 
 // 把 PEM bundle 拆成多个 X509Certificate（new X509Certificate 只读第一个）
@@ -151,7 +151,41 @@ function parseMqttAuthText(text) {
 //   3. 客户端只送 leaf 也能由本地 bundle 补全
 function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
     const isTrusted = (c) => trustedCerts.some((t) => t.raw.equals(c.raw));
-    const hex = (s) => (s ? Buffer.from(s, 'binary').toString('hex') : '<none>');
+    const hex = (s) => (s ? Buffer.from(s, 'binary').toString('hex').toUpperCase() : '<none>');
+
+    // 把 X509Certificate 还原为 PEM（与客户端送来的格式一致，可直接贴给 openssl 用）
+    const pemOf = (cert) => {
+        const b64 = Buffer.from(cert.raw).toString('base64');
+        const lines = b64.match(/.{1,64}/g)?.join('\n') ?? '';
+        return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`;
+    };
+
+    // 打印一张证书的关键信息 + 完整 PEM
+    const dumpCert = (tag, cert) => {
+        console.log(`\n===== ${tag} =====`);
+        console.log(`subject   : ${cert.subject.replace(/\n/g, ', ')}`);
+        console.log(`issuer    : ${cert.issuer.replace(/\n/g, ', ')}`);
+        console.log(`notBefore : ${cert.validFrom}`);
+        console.log(`notAfter  : ${cert.validTo}`);
+        console.log(`SKID      : ${hex(cert.subjectKeyIdentifier)}`);
+        console.log(`AKID      : ${hex(cert.authorityKeyIdentifier)}`);
+        console.log(`SHA256    : ${cert.fingerprint256}`);
+        console.log(`PEM       :`);
+        console.log(pemOf(cert));
+    };
+
+    // ---- 落盘前先把所有输入证书完整打印一遍 ----
+    console.log('\n[CHAIN] ============ INPUT CERTIFICATES ============');
+    dumpCert('leaf (chain[0])', leaf);
+
+    providedIntermediates.forEach((c, i) => {
+        dumpCert(`providedIntermediates[${i}] (chain[${i + 1}])`, c);
+    });
+
+    trustedCerts.forEach((c, i) => {
+        dumpCert(`trustedCerts[${i}] (local trust store)`, c);
+    });
+    console.log('[CHAIN] ===========================================\n');
 
     const chain = [leaf];
     const seen = new Set([leaf.fingerprint256]);
@@ -159,6 +193,7 @@ function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
         ...providedIntermediates.filter((c) => !seen.has(c.fingerprint256)),
         ...trustedCerts,
     ];
+    console.log(`[CHAIN] pool size=${pool.length} (seen=${seen.size})`);
 
     let cur = leaf;
     for (let depth = 0; depth < MAX_CHAIN_DEPTH; depth++) {
