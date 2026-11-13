@@ -717,7 +717,8 @@
             if (!inter || !inter.certPem) warnings.push('缺少 2 级 CA 证书');
             if (!top   || !top.certPem)   warnings.push('缺少 1 级 CA 证书');
 
-            const ts = Date.now();
+            // 时间戳：改为 ISO 8601 字符串（UTC，带毫秒与 Z 后缀）
+            const ts = new Date().toISOString();
             const payload = `${clientId}|${ts}`;
             const payloadBytes = new TextEncoder().encode(payload);
 
