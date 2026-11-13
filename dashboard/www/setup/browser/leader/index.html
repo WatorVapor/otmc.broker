@@ -6,7 +6,6 @@
   <meta name="theme-color" content="#001529" />
   <title>领头角色 OTMC Client 密钥与 CSR 生成器</title>
 
-  <!-- antdv-next 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/reset.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.css" />
 
@@ -18,8 +17,6 @@
       -webkit-text-size-adjust: 100%;
       -webkit-tap-highlight-color: transparent;
     }
-
-    /* ===== 以下基础样式与 PC 原版完全一致 ===== */
 
     .logo {
       height: 64px;
@@ -74,49 +71,26 @@
     }
     .secure-box.ca { background: #fff2e8; border-color: #ffbb96; color: #612500; }
 
-    /* ===== 证书类型 Segmented —— 颜色区分 ===== */
     .cert-type-seg.ant-segmented {
       padding: 6px !important;
       background: #eef2f7 !important;
       border-radius: 12px !important;
     }
-
-    /* 隐藏原生白色滑块，让每个选项用自身颜色高亮 */
-    .cert-type-seg .ant-segmented-thumb {
-      display: none !important;
-    }
-
+    .cert-type-seg .ant-segmented-thumb { display: none !important; }
     .cert-type-seg .ant-segmented-item {
       border-radius: 8px !important;
       margin: 0 2px !important;
       transition: background .2s ease, box-shadow .2s ease, color .2s ease !important;
     }
-
     .cert-type-seg .ant-segmented-item-label {
       padding: 6px 14px !important;
       font-weight: 500 !important;
       line-height: 1.5 !important;
       transition: color .2s ease !important;
     }
-
-    /* 三个证书类型各自的色系（与顺序对应：1 级 CA / 2 级 CA / 叶子） */
-    .cert-type-seg .ant-segmented-item:nth-child(1) {
-      --c-main: #cf1322;
-      --c-soft: #fff1f0;
-      --c-edge: #ffccc7;
-    }
-    .cert-type-seg .ant-segmented-item:nth-child(2) {
-      --c-main: #d46b08;
-      --c-soft: #fff7e6;
-      --c-edge: #ffd591;
-    }
-    .cert-type-seg .ant-segmented-item:nth-child(3) {
-      --c-main: #0958d9;
-      --c-soft: #e6f4ff;
-      --c-edge: #91caff;
-    }
-
-    /* 未选中：浅底 + 主题色文字 + 细边框 */
+    .cert-type-seg .ant-segmented-item:nth-child(1) { --c-main: #cf1322; --c-soft: #fff1f0; --c-edge: #ffccc7; }
+    .cert-type-seg .ant-segmented-item:nth-child(2) { --c-main: #d46b08; --c-soft: #fff7e6; --c-edge: #ffd591; }
+    .cert-type-seg .ant-segmented-item:nth-child(3) { --c-main: #0958d9; --c-soft: #e6f4ff; --c-edge: #91caff; }
     .cert-type-seg .ant-segmented-item:not(.ant-segmented-item-selected) {
       background: var(--c-soft) !important;
       box-shadow: inset 0 0 0 1px var(--c-edge) !important;
@@ -127,8 +101,6 @@
     .cert-type-seg .ant-segmented-item:not(.ant-segmented-item-selected):hover {
       box-shadow: inset 0 0 0 1px var(--c-main) !important;
     }
-
-    /* 选中：实心主题色 + 白字 + 阴影 */
     .cert-type-seg .ant-segmented-item-selected {
       background: var(--c-main) !important;
       box-shadow: 0 3px 10px -2px var(--c-main) !important;
@@ -138,7 +110,6 @@
       font-weight: 600 !important;
     }
 
-    /* ===== 当前类型说明条（带类型色） ===== */
     .type-hint {
       margin: 0 0 16px;
       padding: 10px 12px 10px 14px;
@@ -154,41 +125,17 @@
     .type-hint.hint--space-inter { border-left-color: #d46b08; background: #fffbf0; color: #ad4e00; }
     .type-hint.hint--client-leaf { border-left-color: #0958d9; background: #f4f9ff; color: #003eb3; }
 
-    /* ===== 移动端（≤768px）覆盖样式 ===== */
     @media (max-width: 768px) {
-      .page-header {
-        height: 56px;
-        padding: 0 8px;
-        font-size: 15px;
-        gap: 4px;
-        line-height: normal;
-      }
-      .page-header .collapse-btn {
-        font-size: 18px;
-        padding: 0 6px;
-      }
-
-      .page-content {
-        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-      }
-
+      .page-header { height: 56px; padding: 0 8px; font-size: 15px; gap: 4px; line-height: normal; }
+      .page-header .collapse-btn { font-size: 18px; padding: 0 6px; }
+      .page-content { padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
       .section + .section { margin-top: 12px; }
-
       .pem-text { font-size: 11px !important; }
-
-      /* 触摸目标更大 */
       .ant-btn { min-height: 36px; }
       .ant-alert { padding: 10px 12px; }
-
-      .cert-type-seg .ant-segmented-item-label {
-        padding: 6px 8px !important;
-        font-size: 13px !important;
-      }
+      .cert-type-seg .ant-segmented-item-label { padding: 6px 8px !important; font-size: 13px !important; }
     }
-
-    @media (max-width: 480px) {
-      .page-header { font-size: 14px; }
-    }
+    @media (max-width: 480px) { .page-header { font-size: 14px; } }
   </style>
 </head>
 <body>
@@ -197,8 +144,6 @@
 
 <script type="text/x-template" id="app-template">
   <a-layout style="min-height: 100vh">
-
-    <!-- 桌面端左侧菜单 -->
     <a-layout-sider
       v-if="!isMobile"
       v-model:collapsed="collapsed"
@@ -208,18 +153,12 @@
       theme="dark"
     >
       <div class="logo">{{ collapsed ? '导航' : 'OTMC 导航' }}</div>
-
       <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys">
-        <a-menu-item key="overview">
-          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
-        </a-menu-item>
-        <a-menu-item key="setup">
-          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
-        </a-menu-item>
+        <a-menu-item key="overview"><a href="/" rel="noopener" style="display: block">🏠 首页</a></a-menu-item>
+        <a-menu-item key="setup"><a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a></a-menu-item>
       </a-menu>
     </a-layout-sider>
 
-    <!-- 移动端抽屉导航 -->
     <a-drawer
       v-if="isMobile"
       v-model:open="drawerOpen"
@@ -229,22 +168,12 @@
       :styles="{ body: { padding: 0, background: '#001529' } }"
     >
       <div class="logo">OTMC 导航</div>
-      <a-menu
-        theme="dark"
-        mode="inline"
-        :selected-keys="selectedKeys"
-        @click="drawerOpen = false"
-      >
-        <a-menu-item key="overview">
-          <a href="/" rel="noopener" style="display: block">🏠 首页</a>
-        </a-menu-item>
-        <a-menu-item key="setup">
-          <a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a>
-        </a-menu-item>
+      <a-menu theme="dark" mode="inline" :selected-keys="selectedKeys" @click="drawerOpen = false">
+        <a-menu-item key="overview"><a href="/" rel="noopener" style="display: block">🏠 首页</a></a-menu-item>
+        <a-menu-item key="setup"><a href="/setup" rel="noopener" style="display: block">⚙️ 设置</a></a-menu-item>
       </a-menu>
     </a-drawer>
 
-    <!-- 右侧主体 -->
     <a-layout>
       <a-layout-header class="page-header">
         <a-button type="text" class="collapse-btn" @click="toggleMenu">☰</a-button>
@@ -263,7 +192,6 @@
             :message="dbError || '当前环境不支持 IndexedDB，无法安全存储密钥'"
           ></a-alert>
 
-          <!-- ① 证书类型 + Subject -->
           <a-card class="section" title="① 证书类型与 Subject (DN)">
             <a-segmented
               v-model:value="currentTypeKey"
@@ -308,7 +236,6 @@
             </a-descriptions>
           </a-card>
 
-          <!-- ② 生成 -->
           <a-card class="section" title="② 生成 / 存储 / 签发">
             <a-space wrap>
               <a-button type="primary" :loading="loading" :disabled="!cryptoOk || !indexedDbOk" @click="onGenerate">
@@ -349,7 +276,6 @@
             </a-typography-paragraph>
           </a-card>
 
-          <!-- ★ 新增：为其他设备的叶子证书 CSR 签发（仅 Space 2nd-Level CA 页签） -->
           <a-card
             v-if="currentTypeKey === 'space-inter'"
             class="section"
@@ -375,9 +301,7 @@
             </a-form>
 
             <a-space wrap style="margin-bottom: 12px">
-              <a-button :disabled="!extCsrPem.trim()" @click="onParseExtCsr(false)">
-                解析并验证 CSR
-              </a-button>
+              <a-button :disabled="!extCsrPem.trim()" @click="onParseExtCsr(false)">解析并验证 CSR</a-button>
               <a-button
                 type="primary"
                 :loading="extSigning"
@@ -386,17 +310,12 @@
               >
                 用本机 2 级 CA 签发该 CSR
               </a-button>
-              <a-button :disabled="!extCsrPem && !extCertPem" @click="onClearExt">
-                清空
-              </a-button>
+              <a-button :disabled="!extCsrPem && !extCertPem" @click="onClearExt">清空</a-button>
             </a-space>
 
             <a-alert
-              v-if="extCsrError"
-              type="error"
-              show-icon
-              :message="extCsrError"
-              style="margin-bottom: 12px"
+              v-if="extCsrError" type="error" show-icon
+              :message="extCsrError" style="margin-bottom: 12px"
             ></a-alert>
 
             <a-descriptions v-if="extCsrInfo" :column="1" size="small" bordered style="margin-bottom: 12px">
@@ -432,10 +351,7 @@
               </div>
 
               <a-alert
-                v-if="extChainWarnings.length"
-                type="warning"
-                show-icon
-                style="margin-bottom: 8px"
+                v-if="extChainWarnings.length" type="warning" show-icon style="margin-bottom: 8px"
               >
                 <template #message>
                   <div>证书链不完整：</div>
@@ -443,10 +359,7 @@
                 </template>
               </a-alert>
               <a-alert
-                v-else-if="extCertChainPem"
-                type="success"
-                show-icon
-                style="margin-bottom: 8px"
+                v-else-if="extCertChainPem" type="success" show-icon style="margin-bottom: 8px"
                 message="证书链完整：叶子证书 → Space 2nd-Level CA → Space 1st-Level CA"
               ></a-alert>
 
@@ -479,7 +392,6 @@
             </div>
           </a-card>
 
-          <!-- ③ 结果 -->
           <a-card v-if="hasResult" class="section" title="③ 结果">
             <a-descriptions :column="2" size="small" bordered style="margin-bottom: 16px">
               <a-descriptions-item label="证书类型">{{ currentType.label }}</a-descriptions-item>
@@ -496,7 +408,6 @@
               </a-descriptions-item>
             </a-descriptions>
 
-            <!-- 私钥（始终不可导出） -->
             <div class="pem-block">
               <div class="pem-head">
                 <span>
@@ -515,7 +426,6 @@
               </div>
             </div>
 
-            <!-- 公钥 -->
             <div class="pem-block" v-if="result.publicKeyPem">
               <div class="pem-head">
                 <span>
@@ -530,7 +440,6 @@
               <a-textarea :rows="6" :value="result.publicKeyPem" readonly class="pem-text" />
             </div>
 
-            <!-- CSR -->
             <div class="pem-block" v-if="result.csrPem">
               <div class="pem-head">
                 <span>
@@ -545,7 +454,6 @@
               <a-textarea :rows="7" :value="result.csrPem" readonly class="pem-text" />
             </div>
 
-            <!-- 已签发证书 -->
             <div class="pem-block" v-if="result.certPem">
               <div class="pem-head">
                 <span>
@@ -560,10 +468,7 @@
               </div>
 
               <a-alert
-                v-if="result.certIsMock"
-                type="warning"
-                show-icon
-                style="margin-bottom: 8px"
+                v-if="result.certIsMock" type="warning" show-icon style="margin-bottom: 8px"
                 message="这是 dummy 服务端返回的占位证书，不是真实 X.509 结构。接入真实 OTMC 服务端后即可拿到有效证书。"
               ></a-alert>
 
@@ -600,9 +505,7 @@
                 </a-typography-paragraph>
                 <pre class="mono" style="margin: 0 0 12px; white-space: pre-wrap">{{ currentType.extFile }}</pre>
 
-                <a-typography-paragraph style="margin: 0 0 4px">
-                  签发命令：
-                </a-typography-paragraph>
+                <a-typography-paragraph style="margin: 0 0 4px">签发命令：</a-typography-paragraph>
                 <pre class="mono" style="margin:0; white-space:pre-wrap">{{ signCommand }}</pre>
               </a-collapse-panel>
             </a-collapse>
@@ -618,7 +521,6 @@
             </a-typography-paragraph>
           </a-card>
 
-          <!-- ④ 安全说明 -->
           <a-card class="section" title="④ 关于此安全方案的边界说明">
             <a-typography-paragraph>
               <b>适用场景</b>：私钥仅需在<b>当前浏览器内</b>完成签名操作，且不需要将 .key 文件分发给其他 MQTT 客户端。
@@ -638,11 +540,9 @@
         </div>
       </a-layout-content>
     </a-layout>
-
   </a-layout>
 </script>
 
-<!-- 1. Day.js + 插件 -->
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/dayjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/customParseFormat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.23/plugin/weekday.js"></script>
@@ -661,17 +561,12 @@
   dayjs.extend(dayjs_plugin_quarterOfYear);
 </script>
 
-<!-- 2. Vue 3 全局构建 -->
 <script src="https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.global.prod.js"></script>
-
-<!-- 3. antdv-next UMD -->
 <script src="https://cdn.jsdelivr.net/npm/antdv-next@1.7.0/dist/antd.js"></script>
 
-<!-- 4. 业务脚本 -->
 <script>
 const { createApp, reactive, ref, computed, watch, onMounted, onBeforeUnmount } = Vue;
 
-// antdv-next 可能不暴露 message，做防御性降级
 const message = (antd && antd.message) || {
   success: (m) => console.log('[success]', m),
   error: (m) => console.error('[error]', m),
@@ -751,10 +646,7 @@ function pemFromDer(der, label) {
   return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`;
 }
 
-/* ===========================================================================
- * 极简 X.509 / DER 解析（仅用于展示证书元数据：serial / issuer / 有效期）
- * 不参与证书签发逻辑，只读取 PEM 内容。
- * ========================================================================= */
+/* ===== DER / X.509 解析工具 ===== */
 
 function readTLV(buf, offset) {
   const start = offset;
@@ -771,14 +663,13 @@ function readTLV(buf, offset) {
 }
 
 function decodeDerString(tag, bytes) {
-  if (tag === 0x1e) { // BMPString (UTF-16BE)
+  if (tag === 0x1e) {
     let s = '';
     for (let i = 0; i + 1 < bytes.length; i += 2) {
       s += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
     }
     return s;
   }
-  // UTF8String / PrintableString / IA5String / TeletexString 等按 UTF-8 兜底
   return new TextDecoder().decode(bytes);
 }
 
@@ -809,10 +700,10 @@ function parseNameAttrs(buf, tlv) {
   const attrs = [];
   let off = tlv.valueStart;
   while (off < tlv.valueEnd) {
-    const rdn = readTLV(buf, off);      // SET OF AttributeTypeAndValue
+    const rdn = readTLV(buf, off);
     let aoff = rdn.valueStart;
     while (aoff < rdn.valueEnd) {
-      const atv = readTLV(buf, aoff);   // SEQUENCE { OID, value }
+      const atv = readTLV(buf, aoff);
       const oidTlv = readTLV(buf, atv.valueStart);
       const valTlv = readTLV(buf, oidTlv.rawEnd);
       attrs.push({
@@ -827,7 +718,6 @@ function parseNameAttrs(buf, tlv) {
 }
 
 function formatNameAttrs(attrs) {
-  // DER 中 RDNSequence 顺序：C, ST, O, CN（与 OpenSSL -issuer 输出一致），无需反转
   return attrs
     .map((a) => `${OID_SHORT[a.oid] || a.oid}=${a.value}`)
     .join(', ');
@@ -835,12 +725,12 @@ function formatNameAttrs(attrs) {
 
 function parseDerTime(tag, str) {
   let yyyy, mm, dd, hh, mi, ss;
-  if (tag === 0x17) {          // UTCTime: YYMMDDHHMMSSZ
+  if (tag === 0x17) {
     const yy = parseInt(str.slice(0, 2), 10);
     yyyy = String(yy >= 50 ? 1900 + yy : 2000 + yy);
     mm = str.slice(2, 4); dd = str.slice(4, 6);
     hh = str.slice(6, 8); mi = str.slice(8, 10); ss = str.slice(10, 12);
-  } else if (tag === 0x18) {   // GeneralizedTime: YYYYMMDDHHMMSSZ
+  } else if (tag === 0x18) {
     yyyy = str.slice(0, 4); mm = str.slice(4, 6); dd = str.slice(6, 8);
     hh = str.slice(8, 10); mi = str.slice(10, 12); ss = str.slice(12, 14);
   } else {
@@ -849,21 +739,17 @@ function parseDerTime(tag, str) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} UTC`;
 }
 
-/**
- * 从 PEM 证书中解析出 serial / issuer / subject / 有效期。
- * 解析失败会抛异常（调用方负责 try/catch，用于 mock 占位证书场景）。
- */
 function parseX509Pem(pem) {
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   const bin = atob(b64);
   const buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
 
-  const cert = readTLV(buf, 0);               // Certificate SEQUENCE
-  const tbs  = readTLV(buf, cert.valueStart); // TBSCertificate SEQUENCE
+  const cert = readTLV(buf, 0);
+  const tbs  = readTLV(buf, cert.valueStart);
 
   let off = tbs.valueStart;
-  if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd; // version [0] EXPLICIT
+  if (buf[off] === 0xa0) off = readTLV(buf, off).rawEnd;
 
   const serialTlv = readTLV(buf, off);
   const serialBytes = buf.subarray(serialTlv.valueStart, serialTlv.valueEnd);
@@ -871,7 +757,7 @@ function parseX509Pem(pem) {
     .join(':').toUpperCase();
   off = serialTlv.rawEnd;
 
-  off = readTLV(buf, off).rawEnd;             // signature AlgorithmIdentifier
+  off = readTLV(buf, off).rawEnd;
 
   const issuerTlv = readTLV(buf, off);
   const issuerAttrs = parseNameAttrs(buf, issuerTlv);
@@ -915,7 +801,6 @@ const ATTR_OIDS = {
 };
 const OID_ECDSA_WITH_SHA384 = '1.2.840.10045.4.3.3';
 
-/* X.509 扩展 OID */
 const OID_BASIC_CONSTRAINTS  = '2.5.29.19';
 const OID_KEY_USAGE          = '2.5.29.15';
 const OID_EXT_KEY_USAGE      = '2.5.29.37';
@@ -923,7 +808,6 @@ const OID_SUBJECT_KEY_ID     = '2.5.29.14';
 const OID_AUTHORITY_KEY_ID   = '2.5.29.35';
 const OID_CLIENT_AUTH        = '1.3.6.1.5.5.7.3.2';
 
-/** 由 Subject 属性列表构造 DER Name（RDNSequence） */
 function nameFromAttrs(subjectAttrs) {
   const rdnSeq = subjectAttrs
     .filter((a) => a.value)
@@ -935,7 +819,6 @@ function nameFromAttrs(subjectAttrs) {
   return derSequence(...rdnSeq);
 }
 
-/** UTCTime（1950–2049）或 GeneralizedTime */
 function derTime(date) {
   const pad = (n, w = 2) => String(n).padStart(w, '0');
   const y = date.getUTCFullYear();
@@ -973,19 +856,79 @@ async function buildCsrPem(subjectAttrs, publicKeySpki, privateKey) {
   return pemFromDer(csrDer, 'CERTIFICATE REQUEST');
 }
 
-/* ---------------------------------------------------------------------------
- * 本地 X.509 v3 证书签发
- * 使用上级 CA 的不可导出私钥（CryptoKey）在浏览器内对 TBSCertificate 签名。
+/* =========================================================================
+ * 【修复】新增两个辅助函数：
+ *   - extractBitStringContent：从 SPKI 里取 subjectPublicKey BIT STRING 的内容
+ *   - extractSkidFromCertPem：从一张证书 PEM 里直接读出它自己声明的 SKID
  *
- * subjectDer 参数：可选。传入外部 CSR 的 Subject DER 时直接复用，
- * 可原样保留任意 Subject 属性及其原始编码（如 emailAddress 的 IA5String）。
- * ------------------------------------------------------------------------- */
+ * 它们解决之前 SKI/AKI 与远端签发证书算法不一致的问题：
+ * 之前用的是 SHA-1(完整 SPKI)，远端/OpenSSL 用的是 SHA-1(BIT STRING 内容)。
+ * ========================================================================= */
+
+function extractBitStringContent(spkiDer) {
+  const buf = toUint8Array(spkiDer);
+  const spki = readTLV(buf, 0);
+  if (spki.tag !== 0x30) throw new Error('SPKI 不是 SEQUENCE');
+  const alg = readTLV(buf, spki.valueStart);
+  if (alg.tag !== 0x30) throw new Error('SPKI AlgorithmIdentifier 异常');
+  const bitStr = readTLV(buf, alg.rawEnd);
+  if (bitStr.tag !== 0x03) throw new Error('SPKI 缺少 BIT STRING');
+  return buf.slice(bitStr.valueStart + 1, bitStr.valueEnd); // 跳过 unusedBits
+}
+
+function extractSkidFromCertPem(certPem) {
+  const b64 = String(certPem)
+    .replace(/-----BEGIN [^-]+-----/g, '')
+    .replace(/-----END [^-]+-----/g, '')
+    .replace(/\s+/g, '');
+  const bin = atob(b64);
+  const der = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+
+  const OID_SKID = [0x06, 0x03, 0x55, 0x1D, 0x0E]; // 2.5.29.14
+  outer:
+  for (let i = 0; i < der.length - OID_SKID.length - 6; i++) {
+    for (let j = 0; j < OID_SKID.length; j++) {
+      if (der[i + j] !== OID_SKID[j]) continue outer;
+    }
+    let p = i + OID_SKID.length;
+    if (der[p] === 0x01 && der[p + 1] === 0x01) p += 3; // critical BOOLEAN
+    if (der[p] !== 0x04) continue;
+    p++;
+    let len1 = der[p++];
+    if (len1 & 0x80) {
+      const n = len1 & 0x7f;
+      len1 = 0;
+      for (let k = 0; k < n; k++) len1 = (len1 << 8) | der[p++];
+    }
+    if (der[p] !== 0x04) continue;
+    p++;
+    let len2 = der[p++];
+    if (len2 & 0x80) {
+      const n = len2 & 0x7f;
+      len2 = 0;
+      for (let k = 0; k < n; k++) len2 = (len2 << 8) | der[p++];
+    }
+    return der.slice(p, p + len2);
+  }
+  return null;
+}
+
+/**
+ * 签发自签名或上级签发的 X.509 v3 证书。
+ *
+ * issuerCertPem 是新增的可选参数。传入后会：
+ *   1) 直接从上级证书里提取它声明的 SKID 作为 AKID，不再自己重算；
+ *   2) 如果上级证书压根没有 SKID 扩展，则本证书也不输出 AKID 扩展。
+ * 这样能保证「下级.AKID == 上级.SKID」严格成立。
+ */
 async function issueCertificate({
   subjectAttrs,
   subjectDer: subjectDerOverride,
   subjectSpki,
   issuerAttrs,
   issuerSpki,
+  issuerCertPem,
   issuerPrivateKey,
   isCa,
   pathLen,
@@ -996,7 +939,6 @@ async function issueCertificate({
   const issuerDer = nameFromAttrs(issuerAttrs);
   const spkiDer = toUint8Array(subjectSpki);
 
-  // 序列号：16 字节随机，最高位清零保证正整数
   const serial = new Uint8Array(16);
   crypto.getRandomValues(serial);
   serial[0] &= 0x7f;
@@ -1006,14 +948,23 @@ async function issueCertificate({
   const notBefore = new Date(nowMs - 60 * 1000);
   const notAfter = new Date(nowMs + 36500 * 86400 * 1000);
 
-  // ecdsa-with-SHA384，RFC 5758 规定参数必须省略
   const sigAlg = derSequence(derOid(OID_ECDSA_WITH_SHA384));
 
-  // SKI / AKI：取各自 SPKI 的 SHA-1（演示用，RFC 5280 严格定义是对 BIT STRING 内容取摘要）
-  const ski = new Uint8Array(await crypto.subtle.digest('SHA-1', spkiDer));
-  const aki = new Uint8Array(
-    await crypto.subtle.digest('SHA-1', toUint8Array(issuerSpki))
+  // 【修复】SKI：RFC 5280 §4.2.1.2 标准 —— SHA-1(subjectPublicKey BIT STRING)
+  const ski = new Uint8Array(
+    await crypto.subtle.digest('SHA-1', extractBitStringContent(spkiDer))
   );
+
+  // 【修复】AKI：直接从 issuer 证书里提取它声明的 SKID
+  let aki = null;
+  if (issuerCertPem) {
+    try {
+      aki = extractSkidFromCertPem(issuerCertPem);
+    } catch (e) {
+      console.warn('从 issuer 证书提取 SKID 失败，将不输出 AKID 扩展', e);
+      aki = null;
+    }
+  }
 
   const ext = (oid, critical, value) => derSequence(
     ...(critical
@@ -1023,7 +974,6 @@ async function issueCertificate({
 
   const exts = [];
 
-  // basicConstraints
   exts.push(ext(
     OID_BASIC_CONSTRAINTS,
     true,
@@ -1032,36 +982,33 @@ async function issueCertificate({
       : derSequence()
   ));
 
-  // keyUsage
   exts.push(ext(
     OID_KEY_USAGE,
     true,
     isCa
-      ? derBitStringN(new Uint8Array([0x06]), 1)  // keyCertSign(5) | cRLSign(6)
-      : derBitStringN(new Uint8Array([0x80]), 7)  // digitalSignature(0)
+      ? derBitStringN(new Uint8Array([0x06]), 1)
+      : derBitStringN(new Uint8Array([0x80]), 7)
   ));
 
-  // extendedKeyUsage：仅叶子证书
   if (!isCa) {
     exts.push(ext(OID_EXT_KEY_USAGE, false, derSequence(derOid(OID_CLIENT_AUTH))));
   }
 
-  // subjectKeyIdentifier
   exts.push(ext(OID_SUBJECT_KEY_ID, false, derOctetString(ski)));
 
-  // authorityKeyIdentifier（keyIdentifier [0] IMPLICIT OCTET STRING）
-  exts.push(ext(OID_AUTHORITY_KEY_ID, false, derSequence(tlv(0x80, aki))));
+  if (aki) {
+    exts.push(ext(OID_AUTHORITY_KEY_ID, false, derSequence(tlv(0x80, aki))));
+  }
 
-  // TBSCertificate
   const tbs = derSequence(
-    tlv(0xa0, derInteger(new Uint8Array([0x02]))),  // version v3
+    tlv(0xa0, derInteger(new Uint8Array([0x02]))),
     derInteger(serial),
     sigAlg,
     issuerDer,
     derSequence(derTime(notBefore), derTime(notAfter)),
     subjectDer,
     spkiDer,
-    tlv(0xa3, derSequence(...exts))                 // extensions [3] EXPLICIT
+    tlv(0xa3, derSequence(...exts))
   );
 
   const rawSig = new Uint8Array(
@@ -1079,11 +1026,7 @@ async function issueCertificate({
   };
 }
 
-/* ===========================================================================
- * 外部 CSR（PKCS#10）解析与验签
- * 用于「为其他设备的叶子证书 CSR 签发」：解析出 Subject DER 与公钥 SPKI，
- * 再用本机 Space 2nd-Level CA 私钥签发出 End-Entity 证书。
- * ========================================================================= */
+/* ===== 外部 CSR 解析与验签 ===== */
 
 const OID_EC_PUBLIC_KEY  = '1.2.840.10045.2.1';
 const OID_RSA_PUBLIC_KEY = '1.2.840.113549.1.1.1';
@@ -1107,7 +1050,6 @@ const RSA_SIG_OID_TO_HASH = {
   '1.2.840.113549.1.1.13': 'SHA-512',
 };
 
-/** PEM → DER 字节 */
 function pemToDerBytes(pem) {
   const b64 = String(pem)
     .replace(/-----BEGIN [^-]+-----/g, '')
@@ -1115,17 +1057,13 @@ function pemToDerBytes(pem) {
     .replace(/\s+/g, '');
   if (!b64) throw new Error('PEM 内容为空');
   let bin;
-  try {
-    bin = atob(b64);
-  } catch (e) {
-    throw new Error('PEM Base64 解码失败');
-  }
+  try { bin = atob(b64); }
+  catch (e) { throw new Error('PEM Base64 解码失败'); }
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-/** 读取 SubjectPublicKeyInfo 的 AlgorithmIdentifier */
 function parseSpkiAlgorithm(spkiDer) {
   const buf = toUint8Array(spkiDer);
   const top = readTLV(buf, 0);
@@ -1143,7 +1081,6 @@ function parseSpkiAlgorithm(spkiDer) {
   return { oid: decodeOid(buf, oidTlv), paramsOid };
 }
 
-/** 生成人类可读的公钥算法描述 */
 function describePublicKey(spkiDer) {
   try {
     const alg = parseSpkiAlgorithm(spkiDer);
@@ -1159,16 +1096,6 @@ function describePublicKey(spkiDer) {
   }
 }
 
-/**
- * 解析 PKCS#10 CSR（PEM）：
- *   CertificationRequest ::= SEQUENCE {
- *     certificationRequestInfo CertificationRequestInfo,
- *     signatureAlgorithm        AlgorithmIdentifier,
- *     signature                 BIT STRING }
- *   CertificationRequestInfo ::= SEQUENCE {
- *     version INTEGER, subject Name, subjectPKInfo SPKI,
- *     attributes [0] IMPLICIT ... }
- */
 function parseCsrPem(pem) {
   const buf = pemToDerBytes(pem);
   if (buf.length < 16) throw new Error('数据过短，不是有效的 CSR');
@@ -1220,7 +1147,6 @@ function parseCsrPem(pem) {
   };
 }
 
-/** 去掉前导 0 并左填充到固定长度（DER INTEGER → 定长大端） */
 function intToFixedBytes(bytes, len) {
   let i = 0;
   while (i < bytes.length - 1 && bytes[i] === 0) i++;
@@ -1231,7 +1157,6 @@ function intToFixedBytes(bytes, len) {
   return out;
 }
 
-/** ECDSA DER 签名（SEQUENCE{r,s}）→ WebCrypto 需要的 r||s */
 function ecdsaDerToRaw(der, halfLen) {
   const buf = toUint8Array(der);
   const seq = readTLV(buf, 0);
@@ -1247,10 +1172,6 @@ function ecdsaDerToRaw(der, halfLen) {
   return out;
 }
 
-/**
- * 校验 CSR 的自签名。返回 true/false；
- * 遇到不支持的算法时抛异常（调用方按「不支持验证」处理）。
- */
 async function verifyCsrSignature(info) {
   const alg = parseSpkiAlgorithm(info.spkiDer);
   const subtle = crypto.subtle;
@@ -1288,11 +1209,9 @@ async function verifyCsrSignature(info) {
   throw new Error('暂不支持校验该公钥算法：' + alg.oid);
 }
 
-/* ---------------------------------------------------------------------------
- * 远端签发（dummy API）
- * ------------------------------------------------------------------------- */
+/* ===== 远端签发 ===== */
 const OTMC_SIGN_ENDPOINT = '/api/v1/space/sign/client/space-1st-level';
-const USE_MOCK_SIGN_SERVER = false; // ← 接入真实服务端时改成 false
+const USE_MOCK_SIGN_SERVER = false;
 
 const MOCK_CERT_PEM = [
   '-----BEGIN CERTIFICATE-----',
@@ -1301,13 +1220,6 @@ const MOCK_CERT_PEM = [
   '-----END CERTIFICATE-----',
 ].join('\n');
 
-/**
- * 向 OTMC 总服务器请求签发 1 级 CA 证书。
- * 真实实现：POST CSR 到签发接口，服务端用 client-broker-inter 私钥签发后返回 PEM。
- *
- * 注意：服务端返回值可能只有 certificate（PEM），不含 serial / issuer 等元数据。
- * 元数据统一由 onSign() 中的 parseX509Pem() 从 PEM 解析，不依赖这里返回的字段。
- */
 async function requestRemoteSignature(csrPem, type) {
   const payload = {
     csr: csrPem,
@@ -1318,7 +1230,6 @@ async function requestRemoteSignature(csrPem, type) {
     client: 'otmc-browser-leader',
   };
 
-  // ---------- dummy 模式：不发真实请求，返回占位证书 ----------
   if (USE_MOCK_SIGN_SERVER) {
     console.info('[mock] POST', OTMC_SIGN_ENDPOINT, payload);
     await new Promise((r) => setTimeout(r, 900));
@@ -1333,7 +1244,6 @@ async function requestRemoteSignature(csrPem, type) {
     };
   }
 
-  // ---------- 真实请求 ----------
   const resp = await fetch(OTMC_SIGN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1364,9 +1274,6 @@ async function requestRemoteSignature(csrPem, type) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// 证书类型定义（与 bash 脚本一一对应）
-// ---------------------------------------------------------------------------
 const CERT_TYPES = {
   'space-top': {
     label: '空间1级证书Space 1st-Level CA',
@@ -1440,30 +1347,12 @@ const CERT_TYPES = {
   },
 };
 
-/* ============================================================
- *  IndexedDB 层 —— 与 follower 页面共用同一个库，能自愈
- *
- *  - DB_VERSION 与 follower 页面保持一致（2）。
- *  - STORE_NAMES 是 **全站所有页面** 共用的 store 清单：
- *    打开时 onupgradeneeded 会把所有 store 都 ensure 一遍，
- *    因此任意页面先打开都能把整库建全，谁也不用单独 +1 版本。
- *  - 如果库里已有但缺少本页需要的 store（历史遗留库或新加
- *    了 store 却没升版本），不报错，而是在当前库版本基础上 +1
- *    升级一次补齐，然后正常返回可用连接。
- *  - 如果抛 VersionError（库里版本比 DB_VERSION 高，通常是
- *    follower 的自愈 +1 之后被抬高的），改用不带版本号打开，
- *    取当前版本再检查，仍缺则同样 +1 补建。
- *
- *  新增 store 时：把 store 名补进下面 STORE_NAMES，全站所有
- *  页面同步更新这一份清单即可（版本号无需手动加，自愈会处理）。
- * ============================================================ */
 const DB_NAME = 'omtc-mtls-keystore';
-const DB_VERSION = 1; // 与 follower 页面一致；库不存在时按此版本创建
+const DB_VERSION = 1;
 
 const STORE_NAMES = [
   'browser_leader_cert_and_keys',
   'browser_follower_cert_and_keys',
-  // 'browser_space_ca_cert_and_keys',
 ];
 
 const STORE_NAME = 'browser_leader_cert_and_keys';
@@ -1485,13 +1374,9 @@ function openRaw(name, version) {
     let req;
     try {
       req = (version == null) ? indexedDB.open(name) : indexedDB.open(name, version);
-    } catch (e) {
-      return reject(e);
-    }
+    } catch (e) { return reject(e); }
 
-    // 任何升级路径都建全 STORE_NAMES
     req.onupgradeneeded = () => ensureAllStores(req.result);
-
     req.onblocked = () => {
       const err = new Error('IndexedDB 升级被其他标签页阻塞，请关闭本站其他标签页后刷新重试');
       err.name = 'BlockedError';
@@ -1504,26 +1389,16 @@ function openRaw(name, version) {
 
 async function openWithRepair() {
   let db;
-
-  // 1) 按统一版本打开；库不存在会顺带创建并建全 store
   try {
     db = await openRaw(DB_NAME, DB_VERSION);
   } catch (e) {
     if (e && e.name === 'VersionError') {
-      // 库里版本比 DB_VERSION 高（自愈 +1 后常见），按当前版本打开
       db = await openRaw(DB_NAME);
-    } else {
-      throw e;
-    }
+    } else { throw e; }
   }
-
-  // 2) store 齐全 → 直接用
   if (hasAllStores(db)) return db;
-
-  // 3) 缺 store → 在当前版本基础上 +1 升级补建
   const nextVersion = db.version + 1;
   db.close();
-
   const db2 = await openRaw(DB_NAME, nextVersion);
   if (!hasAllStores(db2)) {
     db2.close();
@@ -1534,13 +1409,10 @@ async function openWithRepair() {
 
 function openDB() {
   if (dbPromise) return dbPromise;
-
   dbPromise = openWithRepair().then((db) => {
     db.onversionchange = () => { db.close(); dbPromise = null; };
     return db;
   });
-
-  // 失败不缓存，允许用户刷新/重试后重新打开
   dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
 }
@@ -1580,21 +1452,16 @@ async function dbDelete(key) {
 const app = createApp({
   template: '#app-template',
   setup() {
-    /* ===== 响应式断点（仅 ≤768px 触发） ===== */
     const mqMobile = window.matchMedia('(max-width: 768px)');
     const isMobile = ref(mqMobile.matches);
 
-    /* ===== 导航状态 ===== */
     const collapsed = ref(false);
     const drawerOpen = ref(false);
     const selectedKeys = ref(['setup']);
 
     const toggleMenu = () => {
-      if (isMobile.value) {
-        drawerOpen.value = !drawerOpen.value;
-      } else {
-        collapsed.value = !collapsed.value;
-      }
+      if (isMobile.value) drawerOpen.value = !drawerOpen.value;
+      else collapsed.value = !collapsed.value;
     };
 
     const onMediaChange = (e) => {
@@ -1603,22 +1470,15 @@ const app = createApp({
     };
 
     onMounted(() => {
-      if (mqMobile.addEventListener) {
-        mqMobile.addEventListener('change', onMediaChange);
-      } else if (mqMobile.addListener) {
-        mqMobile.addListener(onMediaChange);
-      }
+      if (mqMobile.addEventListener) mqMobile.addEventListener('change', onMediaChange);
+      else if (mqMobile.addListener) mqMobile.addListener(onMediaChange);
     });
 
     onBeforeUnmount(() => {
-      if (mqMobile.removeEventListener) {
-        mqMobile.removeEventListener('change', onMediaChange);
-      } else if (mqMobile.removeListener) {
-        mqMobile.removeListener(onMediaChange);
-      }
+      if (mqMobile.removeEventListener) mqMobile.removeEventListener('change', onMediaChange);
+      else if (mqMobile.removeListener) mqMobile.removeListener(onMediaChange);
     });
 
-    /* ===== 表单与证书类型 ===== */
     const subjectFields = [
       { key: 'C',  label: 'C (Country)',          placeholder: 'JP' },
       { key: 'ST', label: 'ST (State / Province)', placeholder: 'Tokyo' },
@@ -1660,11 +1520,10 @@ const app = createApp({
 
     const hasResult = computed(() => !!(result.csrPem || result.publicKeyPem));
 
-    /* ===== 其他设备叶子 CSR 签发（仅 Space 2nd-Level CA 页签使用） ===== */
     const extCsrPem = ref('');
     const extCsrInfo = ref(null);
     const extCsrError = ref('');
-    const extCsrVerify = ref('');      // '' | 'ok' | 'fail' | 'unsupported'
+    const extCsrVerify = ref('');
     const extSigning = ref(false);
     const extCertPem = ref('');
     const extCertChainPem = ref('');
@@ -1692,17 +1551,14 @@ const app = createApp({
       Object.assign(extCertMeta, { serial: '', issuer: '', notBefore: '', notAfter: '' });
     }
 
-    /** 输入框变化：清空旧结果并防抖自动解析 */
     watch(extCsrPem, () => {
       extCsrInfo.value = null;
       extCsrError.value = '';
       extCsrVerify.value = '';
       resetExtResult();
-
       if (extParseTimer) { clearTimeout(extParseTimer); extParseTimer = null; }
       const text = (extCsrPem.value || '').trim();
       if (!text) return;
-
       extParseTimer = setTimeout(() => {
         extParseTimer = null;
         onParseExtCsr(true);
@@ -1734,17 +1590,13 @@ const app = createApp({
       try {
         const ok = await verifyCsrSignature(info);
         extCsrVerify.value = ok ? 'ok' : 'fail';
-        if (!ok && !silent) {
-          message.warning('CSR 自签名验证未通过，请确认 CSR 是否被修改');
-        }
+        if (!ok && !silent) message.warning('CSR 自签名验证未通过，请确认 CSR 是否被修改');
       } catch (e) {
         extCsrVerify.value = 'unsupported';
         console.warn('CSR 签名验证跳过：', e);
       }
 
-      if (!silent) {
-        message.success('CSR 解析成功：' + (info.subjectString || '(空 Subject)'));
-      }
+      if (!silent) message.success('CSR 解析成功：' + (info.subjectString || '(空 Subject)'));
     }
 
     async function onSignExtCsr() {
@@ -1754,29 +1606,71 @@ const app = createApp({
 
       extSigning.value = true;
       try {
-        // 用本机 Space 2nd-Level CA（recordKey: client-space-inter）私钥签发
         const caRecKey = 'client-space-inter';
         const caRec = await dbGet(caRecKey);
         if (!caRec || !caRec.privateKey) {
           throw new Error('本机没有找到 Space 2nd-Level CA 私钥，请先在该页签生成密钥对与 CSR');
         }
+        if (!caRec.certPem) {
+          throw new Error('本机 Space 2nd-Level CA 尚未签发证书。请先在本页签上方完成「用本机 1 级密钥签发证书」。');
+        }
 
         const cert = await issueCertificate({
-          subjectDer: info.subjectDer,              // 复用外部 CSR 的 Subject DER
-          subjectSpki: info.spkiDer,                // 复用外部 CSR 的公钥 SPKI
+          subjectDer: info.subjectDer,
+          subjectSpki: info.spkiDer,
           issuerAttrs: caRec.subjectAttrs,
           issuerSpki: toUint8Array(caRec.publicKeySpki),
+          issuerCertPem: caRec.certPem,             // ★ 传入上级证书
           issuerPrivateKey: caRec.privateKey,
           isCa: false,
           pathLen: null,
         });
 
-        let parsed = {};
+        // ===== 自检：叶子证书的 AKID 必须等于 2nd 的 SKID =====
         try {
-          parsed = parseX509Pem(cert.pem);
+          const leafSkid = extractSkidFromCertPem(caRec.certPem);
+          const newLeafAkid = (() => {
+            const der = pemToDerBytes(cert.pem);
+            const OID_AKID = [0x06, 0x03, 0x55, 0x1D, 0x23];
+            outer:
+            for (let i = 0; i < der.length - OID_AKID.length - 6; i++) {
+              for (let j = 0; j < OID_AKID.length; j++) {
+                if (der[i + j] !== OID_AKID[j]) continue outer;
+              }
+              let p = i + OID_AKID.length;
+              if (der[p] === 0x01 && der[p + 1] === 0x01) p += 3;
+              if (der[p] !== 0x04) continue;
+              p++;
+              let l1 = der[p++]; if (l1 > 0x80) continue;
+              if (der[p] !== 0x30) continue;
+              p++;
+              let l2 = der[p++]; if (l2 > 0x80) continue;
+              if (der[p] !== 0x80) continue;
+              p++;
+              let l3 = der[p++]; if (l3 > 0x80) continue;
+              return der.slice(p, p + l3);
+            }
+            return null;
+          })();
+          if (leafSkid && newLeafAkid) {
+            const same = leafSkid.length === newLeafAkid.length &&
+                         leafSkid.every((b, i) => b === newLeafAkid[i]);
+            if (!same) {
+              throw new Error(
+                '签发自检失败：新叶子证书 AKID 与 2nd CA 的 SKID 不匹配。\n' +
+                '  2nd SKID: ' + Array.from(leafSkid).map(b=>b.toString(16).padStart(2,'0')).join('') + '\n' +
+                '  leaf AKID:' + Array.from(newLeafAkid).map(b=>b.toString(16).padStart(2,'0')).join('')
+              );
+            }
+          }
         } catch (e) {
-          console.warn('解析签发证书 PEM 失败', e);
+          if (e.message.startsWith('签发自检失败')) throw e;
+          console.warn('自检时出错（忽略）', e);
         }
+
+        let parsed = {};
+        try { parsed = parseX509Pem(cert.pem); }
+        catch (e) { console.warn('解析签发证书 PEM 失败', e); }
 
         extCertPem.value = cert.pem;
         Object.assign(extCertMeta, {
@@ -1786,7 +1680,6 @@ const app = createApp({
           notAfter: parsed.notAfter || cert.notAfter || '',
         });
 
-        // ===== 组装完整证书链：叶子 → 2 级 CA → 1 级 CA =====
         const chainParts = [cert.pem];
         const warnings = [];
         let hasInter = false;
@@ -1866,7 +1759,6 @@ const app = createApp({
   -extensions v3_req`;
     });
 
-    /* 按证书类型变化的「签发」按钮文案 */
     const signButtonLabel = computed(() => {
       const k = currentTypeKey.value;
       if (k === 'space-top') return '获取 OTMC 签发证书';
@@ -1918,7 +1810,6 @@ const app = createApp({
 
         fillFormFromAttrs(record.subjectAttrs);
 
-        // 若记录里只有 PEM、没有元数据（旧记录或远端签发场景），从 PEM 解析兜底
         let certSerial = record.certSerial || '';
         let certIssuer = record.certIssuer || '';
         let certNotBefore = record.certNotBefore || '';
@@ -1962,23 +1853,16 @@ const app = createApp({
 
     async function onTypeChange() {
       const t = currentType.value;
-
       Object.assign(form, t.subjectDefaults);
       resetResult();
-
       const stored = await checkStored();
-
       if (!stored) {
         message.info(`已切换到：${t.label}（IndexedDB 中暂无该类型密钥）`);
         return;
       }
-
       const ok = await loadFromDb(true);
-      if (ok) {
-        message.success(`已切换到：${t.label}，并从 IndexedDB 自动加载密钥与 CSR`);
-      } else {
-        message.warning(`已切换到：${t.label}，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
-      }
+      if (ok) message.success(`已切换到：${t.label}，并从 IndexedDB 自动加载密钥与 CSR`);
+      else message.warning(`已切换到：${t.label}，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
     }
 
     async function generateKeyPairAndStore() {
@@ -2016,6 +1900,13 @@ const app = createApp({
         createdAt,
         publicKeySpki: spki,
         privateKey: keyPair.privateKey,
+        // ★ 显式清空旧证书，避免"新密钥 + 旧证书"的错配
+        certPem: '',
+        certSerial: '',
+        certIssuer: '',
+        certNotBefore: '',
+        certNotAfter: '',
+        certIssuedAt: '',
       });
 
       return { keyPair, spki, attrs, subject, createdAt };
@@ -2033,8 +1924,7 @@ const app = createApp({
 
       loading.value = true;
       try {
-        const { keyPair, spki, attrs, subject, createdAt } =
-          await generateKeyPairAndStore();
+        const { keyPair, spki, attrs, subject, createdAt } = await generateKeyPairAndStore();
 
         const csrPem = await buildCsrPem(attrs, spki, keyPair.privateKey);
 
@@ -2048,8 +1938,7 @@ const app = createApp({
         });
 
         hasStored.value = true;
-        const label = currentType.value.label;
-        message.success(`${label} 非导出密钥已生成并存入 IndexedDB，CSR 已生成`);
+        message.success(`${currentType.value.label} 非导出密钥已生成并存入 IndexedDB，CSR 已生成`);
       } catch (e) {
         console.error(e);
         message.error('生成失败：' + (e && e.message ? e.message : e));
@@ -2062,10 +1951,6 @@ const app = createApp({
       await loadFromDb(false);
     }
 
-    /* ===== 签发证书 =====
-     * 两条路径（远端 / 本地）签完后统一从 PEM 解析出 serial / issuer / notBefore / notAfter，
-     * 再写回 IndexedDB 并赋值给 result，避免远端响应缺少元数据导致页面显示空白。
-     */
     async function onSign() {
       const t = currentType.value;
 
@@ -2079,10 +1964,8 @@ const app = createApp({
         let cert;
 
         if (t.remote) {
-          /* --- 1 级 CA：由 OTMC 总服务器签发 --- */
           cert = await requestRemoteSignature(result.csrPem, t);
         } else {
-          /* --- 2 级 CA / 叶子证书：用本机上级 CA 私钥本地签发 --- */
           const selfRec = await dbGet(t.recordKey);
           if (!selfRec || !selfRec.publicKeySpki) {
             throw new Error('本机没有找到该类型的公钥记录，请先点击「生成密钥对与 CSR」');
@@ -2095,12 +1978,21 @@ const app = createApp({
               `生成并保存其密钥后再回来签发。`
             );
           }
+          if (!parentRec.certPem) {
+            throw new Error(
+              `上级 CA（${t.caName}）尚未签发证书。` +
+              (t.caName === 'client-space-top'
+                ? '请先切换到「空间1级证书Space 1st-Level CA」页签，点击「获取 OTMC 签发证书」。'
+                : '请先切换到上级 CA 页签完成签发。')
+            );
+          }
 
           cert = await issueCertificate({
             subjectAttrs: selfRec.subjectAttrs,
             subjectSpki: toUint8Array(selfRec.publicKeySpki),
             issuerAttrs: parentRec.subjectAttrs,
             issuerSpki: toUint8Array(parentRec.publicKeySpki),
+            issuerCertPem: parentRec.certPem,     // ★ 传入上级证书，让 AKID 直接从上级 SKID 复制
             issuerPrivateKey: parentRec.privateKey,
             isCa: t.isCa,
             pathLen: t.pathLen,
@@ -2108,21 +2000,59 @@ const app = createApp({
 
           cert.issuer = parentRec.subject ||
             parentRec.subjectAttrs.filter((a) => a.value).map((a) => `/${a.key}=${a.value}`).join('');
+
+          // ===== 签发后自检：本证书 AKID 必须等于上级 SKID =====
+          try {
+            const parentSkid = extractSkidFromCertPem(parentRec.certPem);
+            if (parentSkid) {
+              const der = pemToDerBytes(cert.pem);
+              const OID_AKID = [0x06, 0x03, 0x55, 0x1D, 0x23];
+              let newAkid = null;
+              outer:
+              for (let i = 0; i < der.length - OID_AKID.length - 6; i++) {
+                for (let j = 0; j < OID_AKID.length; j++) {
+                  if (der[i + j] !== OID_AKID[j]) continue outer;
+                }
+                let p = i + OID_AKID.length;
+                if (der[p] === 0x01 && der[p + 1] === 0x01) p += 3;
+                if (der[p] !== 0x04) continue;
+                p++;
+                let l1 = der[p++]; if (l1 > 0x80) continue;
+                if (der[p] !== 0x30) continue;
+                p++;
+                let l2 = der[p++]; if (l2 > 0x80) continue;
+                if (der[p] !== 0x80) continue;
+                p++;
+                let l3 = der[p++]; if (l3 > 0x80) continue;
+                newAkid = der.slice(p, p + l3);
+                break;
+              }
+              if (newAkid) {
+                const same = parentSkid.length === newAkid.length &&
+                             parentSkid.every((b, i) => b === newAkid[i]);
+                if (!same) {
+                  throw new Error(
+                    '签发自检失败：新证书 AKID 与上级 SKID 不匹配。\n' +
+                    '  上级 SKID: ' + Array.from(parentSkid).map(b=>b.toString(16).padStart(2,'0')).join('') + '\n' +
+                    '  本证书 AKID:' + Array.from(newAkid).map(b=>b.toString(16).padStart(2,'0')).join('')
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            if (e.message.startsWith('签发自检失败')) throw e;
+            console.warn('自检时出错（忽略）', e);
+          }
         }
 
-        // 统一从 PEM 解析元数据（远端响应可能只有 certificate 字段）
         let parsed = {};
-        try {
-          parsed = parseX509Pem(cert.pem);
-        } catch (e) {
-          console.warn('解析签发证书 PEM 失败（可能为 mock 证书）', e);
-        }
+        try { parsed = parseX509Pem(cert.pem); }
+        catch (e) { console.warn('解析签发证书 PEM 失败（可能为 mock 证书）', e); }
         const finalSerial    = parsed.serial    || cert.serial    || '';
         const finalIssuer    = parsed.issuer    || cert.issuer    || '';
         const finalNotBefore = parsed.notBefore || cert.notBefore || '';
         const finalNotAfter  = parsed.notAfter  || cert.notAfter  || '';
 
-        // 写回 IndexedDB（两条路径统一处理）
         try {
           const selfRec = await dbGet(t.recordKey);
           if (selfRec) {
@@ -2218,23 +2148,17 @@ const app = createApp({
       if (!stored) return;
 
       const ok = await loadFromDb(true);
-      if (ok) {
-        message.success(`已从 IndexedDB 自动加载 ${currentType.value.label} 密钥与 CSR`);
-      } else {
-        message.warning(`检测到 ${currentType.value.label} 已保存的密钥，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
-      }
+      if (ok) message.success(`已从 IndexedDB 自动加载 ${currentType.value.label} 密钥与 CSR`);
+      else message.warning(`检测到 ${currentType.value.label} 已保存的密钥，但自动加载失败，请点击“从 IndexedDB 加载”重试`);
     });
 
     return {
-      // 布局 / 导航
       isMobile, collapsed, drawerOpen, selectedKeys, toggleMenu,
-      // 表单
       subjectFields, form, result, loading, signing, hasStored, cryptoOk, indexedDbOk, dbError,
       hasResult, subjectString,
       typeOptions, currentTypeKey, currentType, signCommand, signButtonLabel,
       dbName: DB_NAME,
       onTypeChange, onGenerate, onLoad, onSign, onClear,
-      // 其他设备叶子 CSR 签发（含完整证书链）
       extCsrPem, extCsrInfo, extCsrError, extCsrVerify, extSigning,
       extCertPem, extCertChainPem, extChainWarnings, extChainIncludes,
       extCertMeta, extCertFileName, extChainFileName,

@@ -4,7 +4,7 @@ import mqtt from 'mqtt';
 import { createServer } from 'node:http';
 import { unlinkSync, mkdirSync } from 'node:fs';
 import fs from 'node:fs';
-import { X509Certificate, verify } from 'node:crypto';
+import { X509Certificate, verify, createPublicKey } from 'node:crypto';
 import * as path from 'path';
 
 // ============================================================
@@ -13,10 +13,11 @@ import * as path from 'path';
 const TEMP_DIR = '/var/run/otmc';
 const SOCKET_PATH = `${TEMP_DIR}/websocket.mqtt.sock`;
 
-// [FIX] auth 时间戳允许的最大时钟偏差
 const AUTH_MAX_SKEW_MS = 5 * 60_000;
-// [FIX] 证书链重建的最大深度，防止恶意构造的环形链
 const MAX_CHAIN_DEPTH = 16;
+
+// 环境变量：OTMC_DUMP_CERTS=1 时才打印每张证书的完整 PEM
+const DUMP_CERTS = process.env.OTMC_DUMP_CERTS === '1';
 
 let shuttingDown = false;
 
@@ -30,7 +31,6 @@ const BACKENDS = {
             clientId: 'bridge-a-' + Math.random().toString(16).slice(2, 8),
             clean: true,
             reconnectPeriod: 5000,
-            // username: 'user_a', password: 'pass_a'
         }
     },
     'backend-b': {
@@ -39,7 +39,6 @@ const BACKENDS = {
             clientId: 'bridge-b-' + Math.random().toString(16).slice(2, 8),
             clean: true,
             reconnectPeriod: 5000,
-            // username: 'user_b', password: 'pass_b'
         }
     },
     'backend-c': {
@@ -49,9 +48,6 @@ const BACKENDS = {
             clean: true,
             reconnectPeriod: 5000,
             rejectUnauthorized: true,
-            // ca: fs.readFileSync('ca.crt'),
-            // cert: fs.readFileSync('client.crt'),
-            // key: fs.readFileSync('client.key'),
         }
     }
 };
@@ -74,10 +70,9 @@ const caRootMqttClient = fs.readFileSync(
     path.resolve('/usr/local/etc/certs/client_cert/client-root.crt')
 );
 const caTrustedMqttClient = fs.readFileSync(
-    path.resolve('/usr/local/etc/certs/client_cert/client-broker-inter.crt')
+    path.resolve('/usr/local/etc/certs/client_cert/ca_inter_bundle.crt')
 );
 
-// 把 PEM bundle 拆成多个 X509Certificate（new X509Certificate 只读第一个）
 function loadPemBundle(pem) {
     const matches = String(pem).match(
         /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g
@@ -85,9 +80,6 @@ function loadPemBundle(pem) {
     return matches.map((p) => new X509Certificate(p));
 }
 
-// 同时信任 root 与 inter bundle：
-//   - root 作为最终锚点
-//   - inter bundle 作为"权威中间证书池"，用来补全客户端缺漏/拼错的中间层
 const TRUSTED_CERTS = [
     ...loadPemBundle(caRootMqttClient),
     ...loadPemBundle(caTrustedMqttClient),
@@ -97,9 +89,6 @@ const TRUSTED_CERTS = [
 // 4. 认证辅助函数
 // ============================================================
 
-// [FIX] 客户端送来的是 base64url (RFC 4648 §5)，OpenSSL PEM 只认标准 base64。
-// 必须先把 '-'→'+'、'_'→'/' 并补齐 padding，否则会报:
-//   error:04800064:PEM routines::bad base64 decode
 function toPem(base64Cert) {
     let b64 = String(base64Cert).replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
@@ -144,48 +133,32 @@ function parseMqttAuthText(text) {
     return map;
 }
 
-// [FIX] 从 leaf 出发，在 "客户端提供的中间证书 + 本地 trust store" 中按
-// AKID/SKID + 签名关系重建链。这样：
-//   1. 客户端链拼错（同名不同 key）会被自动纠正
-//   2. 客户端无法用伪造的中间层旁路服务端校验
-//   3. 客户端只送 leaf 也能由本地 bundle 补全
 function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
     const isTrusted = (c) => trustedCerts.some((t) => t.raw.equals(c.raw));
     const hex = (s) => (s ? Buffer.from(s, 'binary').toString('hex').toUpperCase() : '<none>');
 
-    // 把 X509Certificate 还原为 PEM（与客户端送来的格式一致，可直接贴给 openssl 用）
-    const pemOf = (cert) => {
-        const b64 = Buffer.from(cert.raw).toString('base64');
-        const lines = b64.match(/.{1,64}/g)?.join('\n') ?? '';
-        return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`;
-    };
-
-    // 打印一张证书的关键信息 + 完整 PEM
-    const dumpCert = (tag, cert) => {
-        console.log(`\n===== ${tag} =====`);
-        console.log(`subject   : ${cert.subject.replace(/\n/g, ', ')}`);
-        console.log(`issuer    : ${cert.issuer.replace(/\n/g, ', ')}`);
-        console.log(`notBefore : ${cert.validFrom}`);
-        console.log(`notAfter  : ${cert.validTo}`);
-        console.log(`SKID      : ${hex(cert.subjectKeyIdentifier)}`);
-        console.log(`AKID      : ${hex(cert.authorityKeyIdentifier)}`);
-        console.log(`SHA256    : ${cert.fingerprint256}`);
-        console.log(`PEM       :`);
-        console.log(pemOf(cert));
-    };
-
-    // ---- 落盘前先把所有输入证书完整打印一遍 ----
-    console.log('\n[CHAIN] ============ INPUT CERTIFICATES ============');
-    dumpCert('leaf (chain[0])', leaf);
-
-    providedIntermediates.forEach((c, i) => {
-        dumpCert(`providedIntermediates[${i}] (chain[${i + 1}])`, c);
-    });
-
-    trustedCerts.forEach((c, i) => {
-        dumpCert(`trustedCerts[${i}] (local trust store)`, c);
-    });
-    console.log('[CHAIN] ===========================================\n');
+    if (DUMP_CERTS) {
+        const pemOf = (cert) => {
+            const b64 = Buffer.from(cert.raw).toString('base64');
+            const lines = b64.match(/.{1,64}/g)?.join('\n') ?? '';
+            return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`;
+        };
+        const dumpCert = (tag, cert) => {
+            console.log(`\n===== ${tag} =====`);
+            console.log(`subject   : ${cert.subject.replace(/\n/g, ', ')}`);
+            console.log(`issuer    : ${cert.issuer.replace(/\n/g, ', ')}`);
+            console.log(`notBefore : ${cert.validFrom}`);
+            console.log(`notAfter  : ${cert.validTo}`);
+            console.log(`SHA256    : ${cert.fingerprint256}`);
+            console.log(`PEM       :`);
+            console.log(pemOf(cert));
+        };
+        console.log('\n[CHAIN] ============ INPUT CERTIFICATES ============');
+        dumpCert('leaf (chain[0])', leaf);
+        providedIntermediates.forEach((c, i) => dumpCert(`providedIntermediates[${i}]`, c));
+        trustedCerts.forEach((c, i) => dumpCert(`trustedCerts[${i}]`, c));
+        console.log('[CHAIN] ===========================================\n');
+    }
 
     const chain = [leaf];
     const seen = new Set([leaf.fingerprint256]);
@@ -193,23 +166,11 @@ function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
         ...providedIntermediates.filter((c) => !seen.has(c.fingerprint256)),
         ...trustedCerts,
     ];
-    console.log(`[CHAIN] pool size=${pool.length} (seen=${seen.size})`);
 
     let cur = leaf;
     for (let depth = 0; depth < MAX_CHAIN_DEPTH; depth++) {
-        if (isTrusted(cur)) {
-            console.log(`[CHAIN] depth=${depth} "${cur.subject}" is a trusted anchor, done`);
-            return chain;
-        }
-        if (cur.checkIssued(cur)) {
-            console.warn(`[CHAIN] depth=${depth} "${cur.subject}" self-signed but NOT trusted`);
-            return null;
-        }
-
-        console.log(`[CHAIN] depth=${depth} cur="${cur.subject}"`);
-        console.log(`[CHAIN]   issuer = ${cur.issuer}`);
-        console.log(`[CHAIN]   AKID   = ${hex(cur.authorityKeyIdentifier)}`);
-        console.log(`[CHAIN]   pool   = ${pool.length} (seen=${seen.size})`);
+        if (isTrusted(cur)) return chain;
+        if (cur.checkIssued(cur)) return null;
 
         let parent = null;
         for (const cand of pool) {
@@ -217,26 +178,16 @@ function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
             try {
                 const issuedOk = cur.checkIssued(cand);
                 const verifyOk = issuedOk && cur.verify(cand.publicKey);
-                // 只对 subject 与 issuer 字符串能对上的候选打日志，避免刷屏
-                if (cur.issuer === cand.subject) {
-                    console.log(
-                        `[CHAIN]   candidate "${cand.subject}" SKID=${hex(cand.subjectKeyIdentifier)} ` +
-                        `checkIssued=${issuedOk} verify=${verifyOk}`
-                    );
-                }
                 if (issuedOk && verifyOk) { parent = cand; break; }
-            } catch (err) {
-                if (cur.issuer === cand.subject) {
-                    console.log(`[CHAIN]   candidate "${cand.subject}" verify threw: ${err.message}`);
-                }
-            }
+            } catch { /* 换下一个 */ }
         }
-
         if (!parent) {
-            console.warn(`[CHAIN] depth=${depth} no parent for "${cur.subject}" (issuer=${cur.issuer})`);
+            console.warn(
+                `[CHAIN] depth=${depth} no parent for "${cur.subject.replace(/\n/g, ', ')}" ` +
+                `(issuer=${cur.issuer.replace(/\n/g, ', ')})`
+            );
             return null;
         }
-        console.log(`[CHAIN] depth=${depth} parent = "${parent.subject}"`);
         chain.push(parent);
         seen.add(parent.fingerprint256);
         cur = parent;
@@ -244,24 +195,22 @@ function buildChainToTrustAnchor(leaf, providedIntermediates, trustedCerts) {
     return null;
 }
 
-
 // ============================================================
 // 5. 证书链 + 签名校验
-//    auth = { v, alg, ts, cid, payload, sig, chain: [leafB64, ...] }
-//    ts 既支持 number(ms) 也支持 ISO 8601 字符串（如 2026-11-13T14:04:28.236Z）
+//    ts 兼容 number(ms) 与 ISO 8601 字符串
+//    签名既兼容浏览器 WebCrypto 的 raw (ieee-p1363)，也兼容 Node/openssl 的 DER
 // ============================================================
 function verifyMqttAuth(auth) {
     if (!auth || typeof auth !== 'object') return false;
     if (!Array.isArray(auth.chain) || auth.chain.length === 0) return false;
     if (typeof auth.payload !== 'string' || typeof auth.sig !== 'string') return false;
 
-    // [FIX] 算法白名单
     if (auth.alg !== 'ECDSA-P384-SHA384') {
         console.warn('[WS] unsupported alg:', auth.alg);
         return false;
     }
 
-    // [FIX] 兼容两种 ts：number(ms) 或 ISO 8601 字符串
+    // 兼容两种 ts
     let tsMs;
     let tsStr;
 
@@ -285,7 +234,6 @@ function verifyMqttAuth(auth) {
         return false;
     }
 
-    // [FIX] payload 必须与 cid|ts 一致，防篡改（ts 使用原样字符串，保证与签名内容一致）
     if (typeof auth.cid !== 'string' || auth.payload !== `${auth.cid}|${tsStr}`) {
         console.warn('[WS] auth payload does not match cid|ts');
         return false;
@@ -300,7 +248,7 @@ function verifyMqttAuth(auth) {
         return false;
     }
 
-    // --- 解析客户端提供的中间证书（允许个别无效，跳过并记录） ---
+    // --- 解析客户端提供的中间证书 ---
     const provided = [];
     for (let i = 1; i < auth.chain.length; i++) {
         try {
@@ -310,7 +258,7 @@ function verifyMqttAuth(auth) {
         }
     }
 
-    // --- 以 leaf 为起点重建到受信任锚点的完整链 ---
+    // --- 重建链 ---
     const fullChain = buildChainToTrustAnchor(leaf, provided, TRUSTED_CERTS);
     if (!fullChain) {
         console.warn('[WS] unable to build chain to a trusted anchor');
@@ -318,10 +266,10 @@ function verifyMqttAuth(auth) {
     }
     console.log(
         '[WS] chain rebuilt:',
-        fullChain.map((c, i) => `[${i}] ${c.subject}`).join('  ->  ')
+        fullChain.map((c, i) => `[${i}] ${c.subject.replace(/\n/g, ', ')}`).join('  ->  ')
     );
 
-    // --- 有效期（X509Certificate.verify 不检查有效期，必须手动检查） ---
+    // --- 有效期 ---
     const now = Date.now();
     for (const cert of fullChain) {
         const from = new Date(cert.validFrom).getTime();
@@ -332,7 +280,7 @@ function verifyMqttAuth(auth) {
         }
     }
 
-    // --- 链内逐级验签（重建时已验过，这里再显式校验一次，便于日志） ---
+    // --- 逐级验签 ---
     for (let i = 0; i < fullChain.length - 1; i++) {
         const child = fullChain[i];
         const parent = fullChain[i + 1];
@@ -347,41 +295,56 @@ function verifyMqttAuth(auth) {
         }
     }
 
-    // --- 用叶子证书公钥验证 payload 签名 ---
+    // --- payload 签名验证 ---
+    // 浏览器 WebCrypto 输出 raw (r||s, IEEE P1363)，P-384 为 96 字节；
+    // Node crypto.verify 默认期望 DER，需显式指定 dsaEncoding。
+    // leaf.publicKey 已是 KeyObject (type='public')，直接作为 key 使用。
     const verifyData = Buffer.from(auth.payload, 'utf8');
     const signature = Buffer.from(auth.sig, 'base64url');
+    const publicKeyObj = leaf.publicKey;
+
+    const isLikelyRaw = signature.length === 96;
+    const encodings = isLikelyRaw ? ['ieee-p1363', 'der'] : ['der', 'ieee-p1363'];
 
     let ok = false;
-    try {
-        ok = verify('sha384', verifyData, leaf.publicKey, signature, {
-            dsaEncoding: 'der',
-        });
-    } catch {
+    let usedEncoding = '';
+
+    for (const enc of encodings) {
         try {
-            ok = verify('sha384', verifyData, leaf.publicKey, signature, {
-                dsaEncoding: 'ieee-p1363',
-            });
-        } catch (err2) {
-            console.warn('[WS] signature verify error:', err2.message);
-            return false;
+            ok = verify(
+                'sha384',
+                verifyData,
+                { key: publicKeyObj, dsaEncoding: enc },
+                signature
+            );
+            usedEncoding = enc;
+            if (ok) break;
+        } catch (err) {
+            console.warn(`[WS] verify (dsaEncoding=${enc}) threw:`, err.message);
         }
     }
 
     if (!ok) {
-        console.warn('[WS] payload signature invalid');
+        console.warn(
+            `[WS] payload signature invalid (signature length=${signature.length}B, ` +
+            `tried ieee-p1363 and der)`
+        );
         return false;
     }
 
-    console.log('[WS] mqtt auth OK, subject=%s', leaf.subject);
+    console.log(
+        '[WS] mqtt auth OK, subject=%s, sigFormat=%s',
+        leaf.subject.replace(/\n/g, ', '),
+        usedEncoding
+    );
     return true;
 }
 
 // ============================================================
 // 6. MQTT 连接池
 // ============================================================
-const pools = new Map();       // backendId -> { client, refCount, closeTimer, subscribers }
-const topicRefs = new Map();   // `${backendId}\u0000${topic}` -> refCount
-
+const pools = new Map();
+const topicRefs = new Map();
 const IDLE_TIMEOUT_MS = 60_000;
 
 function getBackendClient(backendId) {
@@ -405,11 +368,10 @@ function getBackendClient(backendId) {
         client,
         refCount: 1,
         closeTimer: null,
-        subscribers: new Set(), // { ws, topic }
+        subscribers: new Set(),
     };
     pools.set(backendId, entry);
 
-    // [FIX] 重连后 clean:true 的会话订阅会丢失，需要按 subscribers 重新订阅
     client.on('connect', () => {
         console.log(`[MQTT] ${backendId} connected`);
         for (const sub of entry.subscribers) {
@@ -427,7 +389,6 @@ function getBackendClient(backendId) {
     client.on('error', (err) => console.error(`[MQTT] ${backendId} error:`, err.message));
     client.on('close', () => console.log(`[MQTT] ${backendId} closed`));
 
-    // MQTT -> 浏览器：全局唯一监听，按订阅 filter 过滤后分发
     client.on('message', (msgTopic, payload) => {
         const text = payload.toString();
         for (const sub of entry.subscribers) {
@@ -532,7 +493,6 @@ try {
 // ============================================================
 // 10. 请求解析辅助
 // ============================================================
-// [FIX] handleProtocols 与 connection 共用同一解析逻辑，避免维护两份
 function parseRequestParams(req) {
     try {
         return new URL(req.url ?? '/', 'ws://localhost').searchParams;
@@ -608,7 +568,6 @@ wss.on('connection', (ws, req) => {
         `subprotocol=${ws.protocol || '<none>'}`
     );
 
-    // ===== token / backend / topic 校验 =====
     if (!token || !isValidToken(token)) {
         ws.close(4001, 'Unauthorized');
         return;
@@ -622,14 +581,12 @@ wss.on('connection', (ws, req) => {
         return;
     }
 
-    // ===== 获取该后端的 MQTT 连接 =====
     const entry = getBackendClient(backendId);
     if (!entry) {
         ws.close(4003, 'Backend unavailable');
         return;
     }
 
-    // ===== 订阅 =====
     const sub = acquireTopic(entry, backendId, ws, topic);
     console.log(`[WS] client connected: backend=${backendId}, topic=${topic}`);
 
@@ -657,14 +614,12 @@ wss.on('connection', (ws, req) => {
             payload = text;
         }
 
-        // [FIX] 发布 topic 必须落在本连接的订阅 filter 范围内，防越权
         if (!mqttMatch(topic, pubTopic)) {
             console.warn(
                 `[WS] publish denied: topic "${pubTopic}" outside subscription "${topic}"`
             );
             return;
         }
-        // [FIX] 发布 topic 不允许含通配符（MQTT 规范）
         if (/[+#]/.test(pubTopic)) {
             console.warn(`[WS] publish denied: topic "${pubTopic}" contains wildcard`);
             return;
@@ -673,7 +628,6 @@ wss.on('connection', (ws, req) => {
         entry.client.publish(pubTopic, payload);
     });
 
-    // ===== 清理 =====
     ws.on('close', () => {
         console.log(`[WS] client disconnected: backend=${backendId}, topic=${topic}`);
         releaseTopic(entry, backendId, sub);
