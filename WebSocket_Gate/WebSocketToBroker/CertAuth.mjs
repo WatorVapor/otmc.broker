@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import { X509Certificate, verify, createPublicKey } from 'node:crypto';
 import * as path from 'path';
 
+const AUTH_MAX_SKEW_MS = 5 * 60_000;
+const MAX_CHAIN_DEPTH = 16;
+
 // 环境变量：OTMC_DUMP_CERTS=1 时才打印每张证书的完整 PEM
 const DUMP_CERTS = process.env.OTMC_DUMP_CERTS === '1';
 
@@ -283,3 +286,4 @@ function verifyMqttAuth(auth) {
     return true;
 }
 
+export { parseMqttAuthText, verifyMqttAuth };

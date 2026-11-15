@@ -138,3 +138,4 @@ function mqttMatch(filter, topic) {
     return f.length === t.length;
 }
 
+export { getBackendClient, releaseBackend, acquireTopic, releaseTopic };

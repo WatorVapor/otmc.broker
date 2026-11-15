@@ -30,10 +30,6 @@ const BACKENDS = {
     }
 };
 
-// ============================================================
-// 2. WebSocket 子协议白名单
-// ============================================================
-const DEFAULT_ALLOWED_PROTOCOLS = new Set(['mqtt', 'mqttv3.1', 'mqtt-bridge.v1']);
 
 const ALLOWED_BY_BACKEND = {
     'backend-a': new Set(['mqtt', 'mqttv3.1']),
