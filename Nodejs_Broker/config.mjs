@@ -6,9 +6,40 @@ const clientKeyValKey = fs.readFileSync(path.resolve( "/usr/local/etc/certs/valk
 const caRootMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/client-root.crt"));
 const caTrustedMqttClient = fs.readFileSync(path.resolve( "/usr/local/etc/certs/client_cert/ca_inter_bundle.crt"));
 
+
+import * as os from "os";
+/**
+ * 读取指定网络接口上的 IPv6 地址
+ * @param {string} ifaceName 接口名，如 "tailscale0"
+ * @param {"global"|"link-local"|"any"} scope 地址范围
+ * @returns {string|undefined}
+ */
+function getIPv6Address(ifaceName, scope = "global") {
+  const addrs = os.networkInterfaces()[ifaceName];
+  if (!addrs) return undefined;
+
+  const ipv6 = addrs.filter(
+    (a) => (a.family === "IPv6" || a.family === 6) && !a.internal
+  );
+
+  switch (scope) {
+    case "global":
+      return ipv6.find((a) => !/^fe80:/i.test(a.address))?.address;
+    case "link-local":
+      return ipv6.find((a) => /^fe80:/i.test(a.address))?.address;
+    case "any":
+      return ipv6[0]?.address;
+    default:
+      return undefined;
+  }
+}
+
+const tailscaleIPv6 = getIPv6Address("tailscale0");
+
+
 const config = {
   mqtt: {
-    host: '2404:7a82:1be9:3f00:96c6:91ff:fea6:7bd0',
+    host: tailscaleIPv6,
     port: 18883,
     client: {
       caRoot: caRootMqttClient,
@@ -62,3 +93,4 @@ const config = {
 };
 
 export { config };
+
