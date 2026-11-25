@@ -48,6 +48,18 @@ const readAllMqttBrokerNodesFromRedis = async () => {
   return backEndsOfHaproxy;
 }
 
+const TOPIC_ENDPOINT_UPDATE_KEY = 'otmc:broker:endpoint:update';
+
+cluster.subscribe(TOPIC_ENDPOINT_UPDATE_KEY, (message) => {
+  console.log('dynamic-backend: Received message on topic:=<', TOPIC_ENDPOINT_UPDATE_KEY, '> message:=<', message, '>');
+  // 当接收到更新消息时，重新读取 Redis 中的 MQTT Broker 节点信息，并生成 HAProxy 的后端配置
+  readAllMqttBrokerNodesFromRedis().then((backEndsOfHaproxy) => {
+    console.log('dynamic-backend: Updated backEndsOfHaproxy:=<', backEndsOfHaproxy, '>');
+  }).catch((err) => {
+    console.error('dynamic-backend: Error reading backends from Redis', err);
+  });
+});
+
 class BackendInRedis {
   static async getAllBackends() {
 
@@ -57,5 +69,8 @@ class BackendInRedis {
   }
 
 }
+
+
+
 
 export { BackendInRedis };
