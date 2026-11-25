@@ -72,7 +72,10 @@ services:
     image: node:26
     volumes:
       - ./Nodejs_Broker:/app
-      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro
+      - /opt/otmc-deploy/otmc.secret/broker/server_cert:/usr/local/etc/certs/server_cert:ro 
+      - /opt/otmc-deploy/otmc.secret/broker/client_cert:/usr/local/etc/certs/client_cert:ro 
+      - /opt/otmc-deploy/otmc.secret/broker/internal_cert:/usr/local/etc/certs/internal_cert:ro 
+      - /opt/otmc-deploy/otmc.secret/broker/valkey-cluster:/usr/local/etc/certs/valkey-cluster:ro 
       - /dev/shm/otmc/:/var/run/otmc/
     working_dir: /app
     command: node ./index.mjs
