@@ -4,6 +4,8 @@ import mqtt from 'mqtt';
 import { createServer } from 'node:http';
 import { unlinkSync, mkdirSync } from 'node:fs';
 import { handleProtocols, handleConnection } from './ClientSession.mjs';
+//import { pools, topicRefs } from './MqttBackEnd.mjs';
+import { BACKENDS } from './MqttBackEnd.mjs';
 
 // ============================================================
 // 0. 全局状态
