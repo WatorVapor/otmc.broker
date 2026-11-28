@@ -7,7 +7,7 @@
   "type": "module",
   "main": "index.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-test-module-mocks --test test/*.test.mjs"
   },
   "dependencies": {
     "@valkey/valkey-glide": "^2.5.1",
