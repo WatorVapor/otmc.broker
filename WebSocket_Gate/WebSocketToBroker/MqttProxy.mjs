@@ -1,8 +1,7 @@
 // multi-bridge-server.js
-import WebSocket, { WebSocketServer } from 'ws';
+import WebSocketfrom from 'ws';
 import mqtt from 'mqtt';
-import { createServer } from 'node:http';
-import { unlinkSync, mkdirSync } from 'node:fs';
+import { BACKENDS } from './MqttBackEnd.mjs';
 
 // ============================================================
 // 6. MQTT 连接池

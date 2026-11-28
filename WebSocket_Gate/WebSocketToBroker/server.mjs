@@ -1,23 +1,14 @@
 // multi-bridge-server.js
-import WebSocket, { WebSocketServer } from 'ws';
-import mqtt from 'mqtt';
+import { WebSocketServer } from 'ws';
 import { createServer } from 'node:http';
 import { unlinkSync, mkdirSync } from 'node:fs';
-import { handleProtocols, handleConnection } from './ClientSession.mjs';
-//import { pools, topicRefs } from './MqttBackEnd.mjs';
-import { BACKENDS } from './MqttBackEnd.mjs';
+import { handleProtocols, handleVerifyClient, handleConnection,clearAllConnection } from './ClientSession.mjs';
 
 // ============================================================
 // 0. 全局状态
 // ============================================================
 const TEMP_DIR = '/var/run/otmc';
 const SOCKET_PATH = `${TEMP_DIR}/websocket.mqtt.sock`;
-
-// ============================================================
-// 2. WebSocket 子协议白名单
-// ============================================================
-const DEFAULT_ALLOWED_PROTOCOLS = new Set(['mqtt', 'mqttv3.1', 'mqtt-bridge.v1']);
-
 
 let shuttingDown = false;
 
@@ -47,9 +38,11 @@ const httpServer = createServer();
 
 const wss = new WebSocketServer({
     server: httpServer,
-
     handleProtocols: (protocols, request) => {
         return handleProtocols(protocols, request);
+    },
+    verifyClient: (info, done) => {
+        return handleVerifyClient(info, done);
     },
 });
 
@@ -91,14 +84,7 @@ function shutdown(signal) {
 
     wss.clients.forEach((ws) => ws.terminate());
     wss.close();
-
-    for (const [id, entry] of pools) {
-        if (entry.closeTimer) clearTimeout(entry.closeTimer);
-        entry.client.end(true);
-        console.log(`[MQTT] ${id} closed`);
-    }
-    pools.clear();
-    topicRefs.clear();
+    clearAllConnection();
 
     httpServer.close(() => {
         try { unlinkSync(SOCKET_PATH); } catch { /* ignore */ }

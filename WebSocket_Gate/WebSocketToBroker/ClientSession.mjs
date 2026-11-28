@@ -1,13 +1,9 @@
 // multi-bridge-server.js
 
-import {parseMqttAuthText,verifyMqttAuth} from './CertAuth.mjs';
+import {parseMqttAuthFromProtocol,verifyMqttAuth,calculateMqttBackendId} from './CertAuth.mjs';
 import { getBackendClient, releaseBackend, acquireTopic,releaseTopic } from './MqttProxy.mjs';
 
 
-// ============================================================
-// 2. WebSocket 子协议白名单
-// ============================================================
-const DEFAULT_ALLOWED_PROTOCOLS = new Set(['mqtt', 'mqttv3.1', 'mqtt-bridge.v1']);
 
 // ============================================================
 // 10. 请求解析辅助
@@ -20,74 +16,45 @@ function parseRequestParams(req) {
     }
 }
 
-
-const handleProtocols = (protocols, request) => {
-    const params = parseRequestParams(request);
-    const backendId = params?.get('backend') ?? null;
-
-    const allowed = (backendId && ALLOWED_BY_BACKEND[backendId])
-        || DEFAULT_ALLOWED_PROTOCOLS;
-
-    for (const proto of protocols) {
-        if (allowed.has(proto)) {
-            console.log(
-                `[WS] negotiated subprotocol: ${proto}` +
-                (backendId ? ` (backend=${backendId})` : '')
-            );
-            return proto;
-        }
+const handleVerifyClient = (info, done) => {
+    const raw = info.req.headers['sec-websocket-protocol'];
+    if (!raw || !raw.trim()) {
+        console.warn('[verifyClient] missing sec-websocket-protocol');
+        return cb(false, 401, 'Missing subprotocol');
     }
-
-    console.warn(
-        `[WS] rejecting handshake: no acceptable subprotocol ` +
-        `(client sent: ${[...protocols].join(', ') || '<none>'}` +
-        `${backendId ? `, backend=${backendId}` : ''})`
-    );
-    return false;
+    console.log('[ClientSession] handleVerifyClient raw:=<', raw, '>');
+    const protocols = raw.split(',').map(s => s.trim()).filter(Boolean);
+    console.log('[ClientSession] handleVerifyClient protocols:=<', protocols, '>');
+    const {auth, certChain} = parseMqttAuthFromProtocol(protocols);
+    console.log('[ClientSession] handleVerifyClient auth:=<', auth, '>');
+    console.log('[ClientSession] handleVerifyClient certChain:=<', certChain, '>');
+    const isValid = verifyMqttAuth(auth, certChain);
+    console.log('[ClientSession] handleVerifyClient verifyMqttAuth result:=<', isValid, '>');
+    if (isValid) {
+        info.req.backEndId = calculateMqttBackendId(certChain);
+        console.log('[ClientSession] handleProtocols info.req.backEndId:=<', info.req.backEndId, '>');
+        done(true);
+    } else {
+        done(false, 4001, 'Unauthorized');
+    }
 }
 
+
+const handleProtocols = (protocols, request) => {
+    console.log('[ClientSession]  handleProtocols protocols=:<',protocols,'>');
+    console.log('[ClientSession] handleProtocols request.backEndId:=<', request.backEndId, '>');
+    return "mqtt";
+}
+
+
+
 const handleConnection = (ws, req) => {
-    const params = parseRequestParams(req);
-    if (!params) {
-        ws.close(4000, 'Bad request');
-        return;
-    }
-
-    // ===== 证书链 + 签名校验 =====
-    const headers = req.headers;
-    const headsWSSecKey = headers['sec-websocket-protocol'];
-    const certMqttAuth = parseMqttAuthText(headsWSSecKey);
-    const certMqttAuthJson = certMqttAuth.auth;
-    console.log('[WS] certMqttAuthJson:=<', certMqttAuthJson, '>');
-
-    if (!verifyMqttAuth(certMqttAuthJson)) {
-        ws.close(4001, 'Unauthorized');
-        return;
-    }
-
-    // ===== 参数解析 =====
-    const token = params.get('token');
-    const backendId = params.get('backend');
-    const topic = params.get('topic');
-
-    console.log(
-        `[WS] new connection: backend=${backendId}, topic=${topic}, ` +
-        `subprotocol=${ws.protocol || '<none>'}`
-    );
-
-    if (!token || !isValidToken(token)) {
-        ws.close(4001, 'Unauthorized');
-        return;
-    }
+    console.log('[ClientSession] handleConnection req.backEndId:=<', req.backEndId, '>');
+    const backendId = req.backEndId;
     if (!backendId || !BACKENDS[backendId]) {
         ws.close(4003, 'Unknown backend');
         return;
     }
-    if (!topic) {
-        ws.close(4002, 'Missing topic');
-        return;
-    }
-
     const entry = getBackendClient(backendId);
     if (!entry) {
         ws.close(4003, 'Backend unavailable');
@@ -95,7 +62,7 @@ const handleConnection = (ws, req) => {
     }
 
     const sub = acquireTopic(entry, backendId, ws, topic);
-    console.log(`[WS] client connected: backend=${backendId}, topic=${topic}`);
+    console.log(`[ClientSession] client connected: backend=${backendId}, topic=${topic}`);
 
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
@@ -123,12 +90,12 @@ const handleConnection = (ws, req) => {
 
         if (!mqttMatch(topic, pubTopic)) {
             console.warn(
-                `[WS] publish denied: topic "${pubTopic}" outside subscription "${topic}"`
+                `[ClientSession] publish denied: topic "${pubTopic}" outside subscription "${topic}"`
             );
             return;
         }
         if (/[+#]/.test(pubTopic)) {
-            console.warn(`[WS] publish denied: topic "${pubTopic}" contains wildcard`);
+            console.warn(`[ClientSession] publish denied: topic "${pubTopic}" contains wildcard`);
             return;
         }
 
@@ -136,12 +103,23 @@ const handleConnection = (ws, req) => {
     });
 
     ws.on('close', () => {
-        console.log(`[WS] client disconnected: backend=${backendId}, topic=${topic}`);
+        console.log(`[ClientSession] client disconnected: backend=${backendId}, topic=${topic}`);
         releaseTopic(entry, backendId, sub);
         releaseBackend(backendId);
     });
 
-    ws.on('error', (err) => console.error('[WS] error:', err.message));
+    ws.on('error', (err) => console.error('[ClientSession] error:', err.message));
 };
 
-export { handleProtocols, handleConnection };
+const clearAllConnection = () => {
+    console.log('[ClientSession] clearing all connections...');
+    for (const [id, entry] of pools) {
+        if (entry.closeTimer) clearTimeout(entry.closeTimer);
+        entry.client.end(true);
+        console.log(`[MQTT] ${id} closed`);
+    }
+    pools.clear();
+    topicRefs.clear();    
+};
+
+export { handleProtocols, handleVerifyClient, handleConnection, clearAllConnection };
