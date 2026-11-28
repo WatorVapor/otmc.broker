@@ -1,8 +1,7 @@
 // multi-bridge-server.js
 
 import {parseMqttAuthFromProtocol,verifyMqttAuth,calculateMqttBackendId} from './CertAuth.mjs';
-import { getBackendClient, releaseBackend, acquireTopic,releaseTopic } from './MqttProxy.mjs';
-
+import {createNewConnection, getBackendClient, releaseBackend, acquireTopic,releaseTopic } from './MqttProxy.mjs';
 
 
 // ============================================================
@@ -12,8 +11,8 @@ function parseRequestParams(req) {
     try {
         return new URL(req.url ?? '/', 'ws://localhost').searchParams;
     } catch {
-        return null;
-    }
+            return null;
+        }
 }
 
 const handleVerifyClient = (info, done) => {
@@ -51,15 +50,12 @@ const handleProtocols = (protocols, request) => {
 const handleConnection = (ws, req) => {
     console.log('[ClientSession] handleConnection req.backEndId:=<', req.backEndId, '>');
     const backendId = req.backEndId;
-    if (!backendId || !BACKENDS[backendId]) {
-        ws.close(4003, 'Unknown backend');
-        return;
-    }
-    const entry = getBackendClient(backendId);
-    if (!entry) {
+    const connectId = createNewConnection(backendId);
+    if (!connectId) {
         ws.close(4003, 'Backend unavailable');
         return;
     }
+    req.mqttConnectId = connectId;
 
     const sub = acquireTopic(entry, backendId, ws, topic);
     console.log(`[ClientSession] client connected: backend=${backendId}, topic=${topic}`);

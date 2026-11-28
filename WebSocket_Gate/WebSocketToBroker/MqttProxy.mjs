@@ -1,7 +1,7 @@
 // multi-bridge-server.js
-import WebSocketfrom from 'ws';
 import mqtt from 'mqtt';
-import { BACKENDS } from './MqttBackEnd.mjs';
+import { matchBackendById } from './MqttBackEnd.mjs';
+import crypto from 'crypto';
 
 // ============================================================
 // 6. MQTT 连接池
@@ -10,7 +10,21 @@ const pools = new Map();
 const topicRefs = new Map();
 const IDLE_TIMEOUT_MS = 60_000;
 
+function createNewConnection(backendId) {
+    console.log('[MqttProxy] createNewConnection backendId:=<',backendId,'>');
+    const connectionId = `${backendId}-${crypto.randomBytes(16).toString('hex')}`;
+    console.log('[MqttProxy] createNewConnection connectionId:=<',connectionId,'>');
+    const backEnd = matchBackendById(backendId);
+    console.log('[MqttProxy] createNewConnection backEnd:=<',backEnd,'>');
+    if (!backEnd) return null;
+
+
+    return connectionId;
+}
+
+
 function getBackendClient(backendId) {
+    console.log('[MqttProxy] creating connection to backend:=<',backendId,'>');
     const existing = pools.get(backendId);
     if (existing) {
         existing.refCount++;
@@ -21,11 +35,10 @@ function getBackendClient(backendId) {
         return existing;
     }
 
-    const config = BACKENDS[backendId];
-    if (!config) return null;
+    const backEnd = matchBackendById(backendId);
+    if (!backEnd) return null;
 
-    console.log(`[MQTT] creating connection to backend: ${backendId}`);
-    const client = mqtt.connect(config.url, config.options);
+    const client = mqtt.connect(backEnd.url, backEnd.options);
 
     const entry = {
         client,
@@ -137,4 +150,4 @@ function mqttMatch(filter, topic) {
     return f.length === t.length;
 }
 
-export { getBackendClient, releaseBackend, acquireTopic, releaseTopic };
+export { createNewConnection, getBackendClient, releaseBackend, acquireTopic, releaseTopic };

@@ -138,5 +138,13 @@ const readMqttBackendConfig = () => {
 };
 
 const BACKENDS = readMqttBackendConfig();
+const matchBackendById = (backendId) => {
+    for (const [name, backend] of Object.entries(BACKENDS)) {
+        if (name === backendId) {
+            return backend;
+        }
+    }
+    return null;
+};
 
-export { BACKENDS };
+export { matchBackendById };
