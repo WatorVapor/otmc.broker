@@ -19,7 +19,7 @@ Client mTLS `:8883` -> `HAProxy_Gate` -> `Nginx_Inner` TLS `:18883` -> `Nodejs_B
 
 ## Commands
 
-There is no lint, typecheck, CI, or automated test suite. Every `npm test` script deliberately exits 1; do not treat that as a broken suite. Each service is its own package with an ignored `package-lock.json`; there is no root manifest or workspace. Use `npm install`, not `npm ci`.
+There is no lint, typecheck, or CI. `HAProxy_Gate/dynamic-backend` has `node:test` unit tests: run `npm test` inside `node:26` (or `./run.test.bash`); they use experimental module mocks, so no certs, Valkey, or HAProxy socket are needed. The other packages' `npm test` scripts deliberately exit 1; do not treat that as a broken suite. Each service is its own package with an ignored `package-lock.json`; there is no root manifest or workspace. Use `npm install`, not `npm ci`.
 
 Both compose files parse:
 
